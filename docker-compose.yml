@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: safekeep_db
+    environment:
+      POSTGRES_DB: safekeep
+      POSTGRES_USER: safekeep_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safekeep_user -d safekeep"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: safekeep_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/safekeep
+      SPRING_DATASOURCE_USERNAME: safekeep_user
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme_dev}
+      APP_JWT_SECRET: ${JWT_SECRET}
+      APP_RELEASE_TOKEN_SECRET: ${RELEASE_TOKEN_SECRET}
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
+      APP_BASE_URL: ${BASE_URL:-http://localhost:5173}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: safekeep_frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    environment:
+      VITE_API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

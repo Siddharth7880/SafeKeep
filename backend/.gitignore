@@ -1,0 +1,21 @@
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# Application secrets — NEVER COMMIT
+src/main/resources/application.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.project
+*.classpath
+
+# OS
+.DS_Store
+Thumbs.db

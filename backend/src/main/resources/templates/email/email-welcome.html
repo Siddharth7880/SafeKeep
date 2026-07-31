@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        .btn { display: inline-block; background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .footer { margin-top: 40px; font-size: 12px; color: #64748b; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Welcome to SafeKeep, <span th:text="${userName}">User</span>! 🎉</h2>
+    <p>Your email address has been successfully verified, and your SafeKeep account is now fully active.</p>
+    <p>You can now start creating your secure vault items and assigning trusted recipients.</p>
+    <p style="text-align: center; margin: 30px 0;">
+        <a th:href="${dashboardUrl}" class="btn">Go to Dashboard</a>
+    </p>
+    <p>Remember to check in regularly to ensure your legacy remains safe!</p>
+    <div class="footer">
+        <p>SafeKeep — Secure Digital Legacy</p>
+    </div>
+</div>
+</body>
+</html>

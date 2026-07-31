@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>URGENT: SafeKeep Check-In Required</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f13; color: #e0e0e0; margin: 0; padding: 20px; }
+    .container { max-width: 560px; margin: 0 auto; background: #1a0a0a; border-radius: 16px; overflow: hidden; border: 1px solid #4e2d2d; }
+    .header { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); padding: 32px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; color: white; }
+    .body { padding: 32px; }
+    .urgent-box { background: rgba(231, 76, 60, 0.15); border: 1px solid rgba(231, 76, 60, 0.4); border-radius: 8px; padding: 20px; margin-bottom: 24px; text-align: center; }
+    .urgent-box h2 { color: #e74c3c; margin: 0 0 8px; }
+    .btn { display: block; text-align: center; background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; text-decoration: none; padding: 16px 32px; border-radius: 8px; font-size: 18px; font-weight: 700; margin: 24px 0; }
+    .footer { padding: 20px 32px; border-top: 1px solid #4e2d2d; font-size: 12px; color: #555; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚨 URGENT — SafeKeep</h1>
+    </div>
+    <div class="body">
+      <p>Hi <strong th:text="${userName}">User</strong>,</p>
+      <div class="urgent-box">
+        <h2>⚠️ Final Warning</h2>
+        <p>Your check-in deadline has passed or is critically overdue. Your vault contents will be released to your designated recipients if you do not check in immediately.</p>
+      </div>
+      <a th:href="${checkinUrl}" class="btn">🆘 CHECK IN NOW — STOP RELEASE</a>
+      <p style="font-size: 13px; color: #888;">If you are unable to check in and intend for the release to proceed, no action is required. Your recipients will be notified once the grace period expires.</p>
+    </div>
+    <div class="footer">SafeKeep — Digital Legacy Protection</div>
+  </div>
+</body>
+</html>

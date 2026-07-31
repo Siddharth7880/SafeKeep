@@ -1,0 +1,28 @@
+# Root .gitignore for SafeKeep
+
+# Secrets
+**/.env
+**/application.properties
+!**/application.properties.example
+**/.env.local
+**/.env.production
+
+# Node
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Java/Maven
+**/target/
+**/*.class
+**/*.jar
+**/*.log
+
+# IDE
+**/.idea/
+**/.vscode/
+**/*.iml
+
+# OS
+**/.DS_Store
+**/Thumbs.db
