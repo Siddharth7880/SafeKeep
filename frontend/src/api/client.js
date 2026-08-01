@@ -90,7 +90,3 @@ export const auditApi = {
   getLogs: (page = 0, size = 20) => api.get(`/api/audit/logs?page=${page}&size=${size}`),
 };
 
-// ==================== Test API ====================
-export const testApi = {
-  triggerRelease: () => api.post('/api/test/trigger-release'),
-};

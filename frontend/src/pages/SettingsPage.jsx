@@ -128,36 +128,6 @@ export default function SettingsPage() {
         </motion.button>
       </form>
 
-      {/* Developer / Test Zone */}
-      <div className="card glass-panel" style={{ marginTop: 40, borderColor: 'rgba(234, 179, 8, 0.2)' }}>
-        <div className="flex items-center gap-2 mb-4">
-          <Settings2 size={18} className="text-warning" style={{ color: '#eab308' }} />
-          <h3 style={{ color: '#eab308' }}>Developer / Test Actions</h3>
-        </div>
-        <p className="text-muted text-sm mb-4">
-          Instantly simulate a missed deadline and trigger the final release. 
-          This will email recipients if they have items assigned to them.
-        </p>
-        <button 
-          type="button" 
-          className="btn btn-ghost" 
-          style={{ border: '1px solid #eab308', color: '#eab308' }}
-          onClick={() => {
-            import('../api/client').then(({ testApi }) => {
-              const loadingToast = toast.loading('Triggering release...');
-              testApi.triggerRelease()
-                .then(() => {
-                  toast.success('Test release triggered successfully! Check recipient emails.', { id: loadingToast });
-                  queryClient.invalidateQueries({ queryKey: ['profile'] });
-                })
-                .catch((e) => toast.error(e.response?.data?.message || 'Failed to trigger release', { id: loadingToast }));
-            });
-          }}
-        >
-          Force Trigger Release (Test)
-        </button>
-      </div>
-
       {/* Danger Zone */}
       <div className="card glass-panel" style={{ marginTop: 40, borderColor: 'rgba(239, 68, 68, 0.2)' }}>
         <div className="flex items-center gap-2 mb-4">
