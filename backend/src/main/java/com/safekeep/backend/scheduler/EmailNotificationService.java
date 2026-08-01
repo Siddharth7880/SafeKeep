@@ -44,8 +44,11 @@ public class EmailNotificationService {
         }
     }
 
+    @org.springframework.scheduling.annotation.Async
     public void sendVerificationEmail(User user, String code) {
         try {
+            log.info("📧 Verification Code for {}: {}", user.getEmail(), code); // VERY IMPORTANT FOR RENDER DEPLOYMENTS
+            
             Context ctx = new Context();
             ctx.setVariable("userName", user.getFullName());
             ctx.setVariable("verificationCode", code);
