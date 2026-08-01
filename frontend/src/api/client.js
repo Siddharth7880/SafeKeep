@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -38,6 +38,10 @@ export const authApi = {
   getProfile: () => api.get('/api/auth/me'),
   verifyEmail: (data) => api.post('/api/auth/verify-email', data),
   deleteAccount: (password) => api.post('/api/auth/delete', { password }),
+  updateProfile: (data) => api.put('/api/auth/me', data),
+  uploadProfilePhoto: (formData) => api.post('/api/auth/me/photo', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
 };
 
 // ==================== Check-In API ====================
@@ -67,7 +71,9 @@ export const vaultApi = {
     headers: { 'X-Vault-Password': password },
     responseType: 'blob'
   }),
-  delete: (id) => api.delete(`/api/vault/items/${id}`),
+  delete: (id, password) => api.delete(`/api/vault/items/${id}`, {
+    headers: { 'X-Vault-Password': password }
+  }),
 };
 
 // ==================== Recipients API ====================
@@ -82,4 +88,9 @@ export const recipientApi = {
 // ==================== Audit API ====================
 export const auditApi = {
   getLogs: (page = 0, size = 20) => api.get(`/api/audit/logs?page=${page}&size=${size}`),
+};
+
+// ==================== Test API ====================
+export const testApi = {
+  triggerRelease: () => api.post('/api/test/trigger-release'),
 };

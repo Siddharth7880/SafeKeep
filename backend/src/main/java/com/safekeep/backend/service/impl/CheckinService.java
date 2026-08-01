@@ -22,7 +22,6 @@ public class CheckinService {
     private final UserRepository userRepository;
     private final UserStatusTransitionService stateMachine;
     private final AuditLogService auditLogService;
-    private final com.safekeep.backend.scheduler.SmsNotificationService smsNotificationService;
 
     @Transactional
     public void performCheckin(UUID userId, String ipAddress) {

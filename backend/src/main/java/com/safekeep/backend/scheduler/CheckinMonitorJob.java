@@ -31,7 +31,6 @@ public class CheckinMonitorJob implements Job {
 
     private final UserRepository userRepository;
     private final EmailNotificationService emailNotificationService;
-    private final SmsNotificationService smsNotificationService;
     private final UserStatusTransitionService userStatusTransitionService;
 
     @Override
@@ -43,18 +42,13 @@ public class CheckinMonitorJob implements Job {
         List<User> users = userRepository.findAllByStatus(UserStatus.ACTIVE);
 
         for (User user : users) {
-            long daysUntilDeadline = java.time.temporal.ChronoUnit.DAYS.between(now, user.getNextCheckinDeadline());
-
             // Transition to MISSED_CHECKIN and GRACE_PERIOD if deadline passed
-            if (daysUntilDeadline < 0) {
+            if (now.isAfter(user.getNextCheckinDeadline())) {
                 userStatusTransitionService.triggerMissedCheckin(user);
                 
-                // Send urgent reminder via Email and SMS
+                // Send urgent reminder via Email
                 if (Boolean.TRUE.equals(user.getEmailNotificationsEnabled())) {
                     emailNotificationService.sendUrgentReminder(user);
-                }
-                if (Boolean.TRUE.equals(user.getSmsNotificationsEnabled())) {
-                    smsNotificationService.sendUrgentReminder(user);
                 }
                 
                 userStatusTransitionService.triggerGracePeriod(user);
@@ -62,15 +56,33 @@ public class CheckinMonitorJob implements Job {
                 continue;
             }
 
-            // Send reminders
-            if (daysUntilDeadline == 3 || daysUntilDeadline == 1) {
+            // Calculate hours until deadline
+            long hoursUntilDeadline = java.time.temporal.ChronoUnit.HOURS.between(now, user.getNextCheckinDeadline());
+
+            // Determine target reminder count based on hours remaining
+            int targetReminderCount = 0;
+            if (hoursUntilDeadline <= 1) targetReminderCount = 6;
+            else if (hoursUntilDeadline <= 5) targetReminderCount = 5;
+            else if (hoursUntilDeadline <= 10) targetReminderCount = 4;
+            else if (hoursUntilDeadline <= 15) targetReminderCount = 3;
+            else if (hoursUntilDeadline <= 20) targetReminderCount = 2;
+            else if (hoursUntilDeadline <= 24) targetReminderCount = 1;
+
+            if (targetReminderCount > user.getReminderCount()) {
+                int hoursLabel = 24;
+                if (targetReminderCount == 6) hoursLabel = 1;
+                else if (targetReminderCount == 5) hoursLabel = 5;
+                else if (targetReminderCount == 4) hoursLabel = 10;
+                else if (targetReminderCount == 3) hoursLabel = 15;
+                else if (targetReminderCount == 2) hoursLabel = 20;
+
                 if (Boolean.TRUE.equals(user.getEmailNotificationsEnabled())) {
-                    emailNotificationService.sendCheckinReminder(user, (int) daysUntilDeadline);
+                    emailNotificationService.sendCheckinReminder(user, hoursLabel);
                 }
-                if (Boolean.TRUE.equals(user.getSmsNotificationsEnabled())) {
-                    smsNotificationService.sendCheckinReminder(user, (int) daysUntilDeadline);
-                }
-                log.info("Sent check-in reminder ({} days) to user {}", daysUntilDeadline, user.getId());
+                log.info("Sent check-in reminder ({} hours) to user {}", hoursLabel, user.getId());
+                
+                user.setReminderCount(targetReminderCount);
+                userRepository.save(user);
             }
         }
     }

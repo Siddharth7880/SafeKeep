@@ -13,6 +13,7 @@ public class UserProfileResponse {
     private UUID id;
     private String email;
     private String fullName;
+    private String profilePhotoUrl;
     private UserStatus status;
     private Integer checkinIntervalDays;
     private Integer gracePeriodDays;

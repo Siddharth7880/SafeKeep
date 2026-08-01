@@ -97,9 +97,10 @@ public class VaultController {
     @Operation(summary = "Soft-delete a vault item")
     public ResponseEntity<ApiResponse<Void>> deleteItem(
             @AuthenticationPrincipal UserDetails userDetails,
-            @PathVariable UUID itemId) {
+            @PathVariable UUID itemId,
+            @RequestHeader("X-Vault-Password") String vaultPassword) {
         UUID userId = resolveUserId(userDetails);
-        vaultService.deleteVaultItem(userId, itemId);
+        vaultService.deleteVaultItem(userId, itemId, vaultPassword);
         return ResponseEntity.ok(ApiResponse.success(null, "Vault item deleted"));
     }
 

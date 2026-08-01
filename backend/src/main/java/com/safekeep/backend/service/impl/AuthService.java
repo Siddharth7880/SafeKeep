@@ -169,6 +169,54 @@ public class AuthService {
         userRepository.deleteById(userId);
     }
 
+    @Transactional
+    public UserProfileResponse updateProfile(UUID userId, com.safekeep.backend.dto.request.UpdateProfileRequest request) {
+        User user = userRepository.findById(userId).orElseThrow();
+        user.setFullName(request.getFullName());
+        userRepository.save(user);
+        auditLogService.log(userId, AuditEventType.SETTINGS_UPDATED, "USER", "Profile updated");
+        return mapToProfile(user);
+    }
+
+    @Transactional
+    public UserProfileResponse uploadProfilePhoto(UUID userId, org.springframework.web.multipart.MultipartFile file) {
+        try {
+            User user = userRepository.findById(userId).orElseThrow();
+            String dirPath = "uploads/profiles/";
+            java.io.File dir = new java.io.File(dirPath);
+            if (!dir.exists()) dir.mkdirs();
+            
+            String ext = "";
+            if (file.getOriginalFilename() != null && file.getOriginalFilename().contains(".")) {
+                ext = file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf("."));
+            }
+            String filename = UUID.randomUUID().toString() + ext;
+            java.nio.file.Path path = java.nio.file.Paths.get(dirPath, filename);
+            java.nio.file.Files.copy(file.getInputStream(), path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            
+            user.setProfilePhotoUrl("/api/auth/photo/" + filename);
+            userRepository.save(user);
+            auditLogService.log(userId, AuditEventType.SETTINGS_UPDATED, "USER", "Profile photo updated");
+            return mapToProfile(user);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save photo", e);
+        }
+    }
+
+    public org.springframework.core.io.Resource getProfilePhoto(String filename) {
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get("uploads/profiles/", filename);
+            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());
+            if (resource.exists() || resource.isReadable()) {
+                return resource;
+            } else {
+                throw new RuntimeException("Could not read the file!");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Error: " + e.getMessage());
+        }
+    }
+
     public UserProfileResponse mapToProfile(User user) {
         Long daysUntil = null;
         boolean isOverdue = false;
@@ -187,6 +235,7 @@ public class AuthService {
                 .id(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
+                .profilePhotoUrl(user.getProfilePhotoUrl())
                 .status(user.getStatus())
                 .checkinIntervalDays(user.getCheckinIntervalDays())
                 .gracePeriodDays(user.getGracePeriodDays())

@@ -52,6 +52,7 @@ export default function RecipientsPage() {
     setEditRecipient(r);
     setValue('name', r.name); setValue('email', r.email);
     setValue('phone', r.phone); setValue('relationship', r.relationship);
+    setValue('notifyOnRelease', r.notifyOnRelease);
     setShowForm(true);
   };
 
@@ -81,8 +82,17 @@ export default function RecipientsPage() {
           <h2>👥 Recipients</h2>
           <p className="text-muted text-sm" style={{ marginTop: 4 }}>Trusted contacts who receive your vault contents when released.</p>
         </div>
-        <button id="add-recipient" className="btn btn-primary" onClick={() => { setShowForm(!showForm); setEditRecipient(null); reset(); }}>
-          <Plus size={16} /> Add Recipient
+        <button id="add-recipient" className="btn btn-primary" onClick={() => { 
+          if (showForm || editRecipient) {
+            setShowForm(false);
+            setEditRecipient(null);
+            reset();
+          } else {
+            setShowForm(true);
+            reset({ notifyOnRelease: true });
+          }
+        }}>
+          {showForm || editRecipient ? <X size={16} /> : <Plus size={16} />} {showForm || editRecipient ? 'Cancel' : 'Add Recipient'}
         </button>
       </div>
 
@@ -114,7 +124,11 @@ export default function RecipientsPage() {
                   <label className="form-label">Relationship</label>
                   <input className="form-input" placeholder="e.g. Spouse, Lawyer, Friend" {...register('relationship')} />
                 </div>
-                <div style={{ gridColumn: 'span 2', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <div className="form-group" style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <input type="checkbox" id="notifyOnRelease" style={{ accentColor: 'var(--primary)', width: 16, height: 16, cursor: 'pointer' }} {...register('notifyOnRelease')} />
+                  <label htmlFor="notifyOnRelease" style={{ margin: 0, fontWeight: 500, cursor: 'pointer' }}>Notify recipient on release via Email</label>
+                </div>
+                <div style={{ gridColumn: 'span 2', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                   <button type="button" className="btn btn-ghost" onClick={() => { setShowForm(false); setEditRecipient(null); reset(); }}>Cancel</button>
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }} type="submit" className="btn btn-primary" disabled={createMutation.isPending || updateMutation.isPending}>
                     <UserPlus size={14} /> {editRecipient ? 'Update' : 'Add Recipient'}

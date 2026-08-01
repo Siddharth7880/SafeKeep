@@ -13,13 +13,11 @@
 <body>
 <div class="container">
     <h2>Welcome to SafeKeep, <span th:text="${userName}">User</span>!</h2>
-    <p>Please click the button below to verify your email address and activate your account:</p>
+    <p>Please use the following 6-digit verification code to activate your account:</p>
     <div style="text-align: center; margin: 30px 0;">
-        <a th:href="${verificationLink}" class="btn" style="display: inline-block; padding: 14px 28px; background-color: #7c6fcd; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Verify Email</a>
+        <span th:text="${verificationCode}" style="display: inline-block; padding: 14px 28px; background-color: #f3f4f6; color: #7c6fcd; border: 2px dashed #7c6fcd; border-radius: 6px; font-weight: bold; font-size: 24px; letter-spacing: 4px;"></span>
     </div>
-    <p>Or copy and paste this link into your browser: <br>
-    <a th:href="${verificationLink}" th:text="${verificationLink}" style="color: #7c6fcd; font-size: 13px; word-break: break-all;"></a></p>
-    <p>This link will expire shortly. If you did not create this account, please ignore this email.</p>
+    <p>This code will expire shortly. If you did not create this account, please ignore this email.</p>
     <div class="footer">
         <p>SafeKeep — Secure Digital Legacy</p>
     </div>

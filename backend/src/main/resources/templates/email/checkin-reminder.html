@@ -32,8 +32,8 @@
         <p>⚠️ Your SafeKeep check-in is due soon. Please confirm you're okay to prevent your digital legacy from being released.</p>
       </div>
       <div class="countdown">
-        <div class="days" th:text="${daysRemaining}">3</div>
-        <div class="label">days remaining to check in</div>
+        <div class="days" th:text="${hoursRemaining}">24</div>
+        <div class="label">hours remaining to check in</div>
       </div>
       <p>Your next check-in deadline: <strong th:text="${nextDeadline}">--</strong></p>
       <p>If you don't check in by this date, your designated recipients will begin receiving access to your vault contents.</p>

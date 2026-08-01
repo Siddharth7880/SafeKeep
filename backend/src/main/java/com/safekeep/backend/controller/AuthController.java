@@ -53,11 +53,40 @@ public class AuthController {
     @Operation(summary = "Get current user profile")
     public ResponseEntity<ApiResponse<UserProfileResponse>> getCurrentUser(
             @AuthenticationPrincipal UserDetails userDetails) {
-        UUID userId = userRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new RuntimeException("User not found"))
-                .getId();
+        UUID userId = resolveUserId(userDetails);
         return ResponseEntity.ok(ApiResponse.success(
                 authService.getProfile(userId), "Profile retrieved successfully"));
+    }
+
+    @PutMapping("/me")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Update current user profile")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> updateProfile(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody com.safekeep.backend.dto.request.UpdateProfileRequest request) {
+        UUID userId = resolveUserId(userDetails);
+        return ResponseEntity.ok(ApiResponse.success(
+                authService.updateProfile(userId, request), "Profile updated successfully"));
+    }
+
+    @PostMapping(value = "/me/photo", consumes = { org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE })
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Upload profile photo")
+    public ResponseEntity<ApiResponse<UserProfileResponse>> uploadProfilePhoto(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestPart("file") org.springframework.web.multipart.MultipartFile file) {
+        UUID userId = resolveUserId(userDetails);
+        return ResponseEntity.ok(ApiResponse.success(
+                authService.uploadProfilePhoto(userId, file), "Profile photo uploaded successfully"));
+    }
+
+    @GetMapping("/photo/{filename:.+}")
+    @Operation(summary = "Get profile photo")
+    public ResponseEntity<org.springframework.core.io.Resource> getProfilePhoto(@PathVariable String filename) {
+        org.springframework.core.io.Resource file = authService.getProfilePhoto(filename);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.getFilename() + "\"")
+                .body(file);
     }
 
     @PostMapping("/delete")

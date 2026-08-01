@@ -42,23 +42,28 @@ public class VaultService {
 
     public record DecryptedFile(byte[] bytes, String originalFileName) {}
 
+    @org.springframework.beans.factory.annotation.Value("${app.release.token-secret}")
+    private String serverSecret;
+
+    private byte[] getServerMasterKey() {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            return digest.digest(serverSecret.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Transactional
     public VaultItemResponse createVaultItem(UUID userId, String userPassword, CreateVaultItemRequest request, MultipartFile file) {
         User user = getUserOrThrow(userId);
 
         try {
-            // Ensure uploads directory exists
             Files.createDirectories(Paths.get(uploadDir));
 
-            // Derive master key from user's password + stored salt
-            byte[] salt = aesEncryptionUtil.fromBase64(user.getEncryptedMasterKeySalt());
-            byte[] masterKeyBytes = aesEncryptionUtil.deriveKeyFromPassword(
-                    userPassword.toCharArray(), salt);
-
-            // Generate a random DEK for this vault item
+            byte[] masterKeyBytes = getServerMasterKey();
             SecretKey dek = aesEncryptionUtil.generateDek();
 
-            // Encrypt the content with DEK (if provided)
             String encryptedContentStr = null;
             String contentIvStr = null;
             if (request.getContent() != null && !request.getContent().trim().isEmpty()) {
@@ -68,7 +73,6 @@ public class VaultService {
                 contentIvStr = contentEncrypted.ivBase64();
             }
 
-            // Encrypt the file with DEK (if provided)
             String originalFileName = null;
             String encryptedFilePath = null;
             String fileIvStr = null;
@@ -82,8 +86,6 @@ public class VaultService {
                 encryptedFilePath = path.toString();
                 fileIvStr = fileEncrypted.ivBase64();
                 
-                // If content wasn't provided, use the file's IV for the main IV column 
-                // since the DB schema requires `iv` to not be null.
                 if (contentIvStr == null) {
                     contentIvStr = fileIvStr;
                 }
@@ -93,10 +95,8 @@ public class VaultService {
                 throw new IllegalArgumentException("Either content or a file must be provided.");
             }
 
-            // Encrypt the DEK with master key (envelope encryption)
             AesEncryptionUtil.EncryptionResult dekEncrypted = aesEncryptionUtil.encryptDek(dek, masterKeyBytes);
 
-            // Resolve recipients
             List<Recipient> recipients = request.getRecipientIds().stream()
                     .map(rId -> recipientRepository.findByIdAndUserId(rId, userId)
                             .orElseThrow(() -> new ResourceNotFoundException("Recipient not found: " + rId)))
@@ -141,26 +141,18 @@ public class VaultService {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
 
-        User user = getUserOrThrow(userId);
-
         try {
-            byte[] salt = aesEncryptionUtil.fromBase64(user.getEncryptedMasterKeySalt());
-            byte[] masterKeyBytes = aesEncryptionUtil.deriveKeyFromPassword(
-                    userPassword.toCharArray(), salt);
-
-            // Decrypt DEK using master key
+            byte[] masterKeyBytes = getServerMasterKey();
             SecretKey dek = aesEncryptionUtil.decryptDek(
                     item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
 
             VaultItemResponse response = mapToResponse(item, true);
-            // Decrypt content using DEK (if exists)
             if (item.getEncryptedContent() != null) {
                 byte[] contentBytes = aesEncryptionUtil.decrypt(
                         item.getEncryptedContent(), item.getIv(), dek);
                 response.setContent(new String(contentBytes, StandardCharsets.UTF_8));
             }
             return response;
-
         } catch (Exception e) {
             log.error("Failed to decrypt vault item {} for user {}: {}", itemId, userId, e.getMessage());
             throw new RuntimeException("Failed to decrypt vault item — wrong password or corrupted data", e);
@@ -172,14 +164,8 @@ public class VaultService {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
 
-        User user = getUserOrThrow(userId);
-
         try {
-            byte[] salt = aesEncryptionUtil.fromBase64(user.getEncryptedMasterKeySalt());
-            byte[] masterKeyBytes = aesEncryptionUtil.deriveKeyFromPassword(
-                    userPassword.toCharArray(), salt);
-
-            // Decrypt DEK using master key to verify password and to re-encrypt new content
+            byte[] masterKeyBytes = getServerMasterKey();
             SecretKey dek = aesEncryptionUtil.decryptDek(
                     item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
 
@@ -192,7 +178,6 @@ public class VaultService {
                 item.setEncryptedContent(contentEncrypted.ciphertextBase64());
                 item.setIv(contentEncrypted.ivBase64());
             } else if (item.getEncryptedFilePath() == null) {
-                // Cannot remove text content if there's no file
                 throw new IllegalArgumentException("Either content or a file must be provided.");
             }
 
@@ -224,18 +209,11 @@ public class VaultService {
             throw new ResourceNotFoundException("No file attached to this vault item");
         }
 
-        User user = getUserOrThrow(userId);
-
         try {
-            byte[] salt = aesEncryptionUtil.fromBase64(user.getEncryptedMasterKeySalt());
-            byte[] masterKeyBytes = aesEncryptionUtil.deriveKeyFromPassword(
-                    userPassword.toCharArray(), salt);
-
-            // Decrypt DEK using master key
+            byte[] masterKeyBytes = getServerMasterKey();
             SecretKey dek = aesEncryptionUtil.decryptDek(
                     item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
 
-            // Read encrypted file and decrypt
             byte[] encryptedFileBytesBase64 = Files.readAllBytes(Paths.get(item.getEncryptedFilePath()));
             String encryptedFileBase64String = new String(encryptedFileBytesBase64, StandardCharsets.UTF_8);
             
@@ -250,10 +228,18 @@ public class VaultService {
     }
 
     @Transactional
-    public void deleteVaultItem(UUID userId, UUID itemId) {
+    public void deleteVaultItem(UUID userId, UUID itemId, String userPassword) {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
-        item.setIsActive(false);  // Soft delete
+        
+        try {
+            byte[] masterKeyBytes = getServerMasterKey();
+            aesEncryptionUtil.decryptDek(item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete vault item — corrupted data", e);
+        }
+
+        item.setIsActive(false);
         vaultItemRepository.save(item);
         auditLogService.log(userId, AuditEventType.VAULT_ITEM_DELETED, "USER",
                 "Vault item soft-deleted: " + item.getLabel());
@@ -283,7 +269,7 @@ public class VaultService {
                 .hasContent(item.getEncryptedContent() != null)
                 .originalFileName(item.getOriginalFileName())
                 .hasFile(item.getEncryptedFilePath() != null)
-                .content(includeContent ? null : null) // Set by caller if needed
+                .content(includeContent ? null : null)
                 .recipients(recipientResponses)
                 .createdAt(item.getCreatedAt())
                 .updatedAt(item.getUpdatedAt())

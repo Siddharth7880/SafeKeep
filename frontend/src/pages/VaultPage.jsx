@@ -79,9 +79,18 @@ export default function VaultPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to update item')
   });
 
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [deleteVaultPassword, setDeleteVaultPassword] = useState('');
+
   const deleteMutation = useMutation({
-    mutationFn: vaultApi.delete,
-    onSuccess: () => { queryClient.invalidateQueries(['vault-items']); toast.success('Item deleted'); },
+    mutationFn: ({id, password}) => vaultApi.delete(id, password),
+    onSuccess: () => { 
+      queryClient.invalidateQueries({ queryKey: ['vault-items'] }); 
+      toast.success('Item deleted securely');
+      setItemToDelete(null);
+      setDeleteVaultPassword('');
+    },
+    onError: (e) => toast.error('Failed to delete: ' + (e.response?.data?.message || 'wrong password')),
   });
 
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -191,8 +200,17 @@ export default function VaultPage() {
           <h2>🔐 Vault</h2>
           <p className="text-muted text-sm" style={{ marginTop: 4 }}>All content is AES-256 encrypted. Only you can decrypt it.</p>
         </div>
-        <button id="add-vault-item" className="btn btn-primary btn-ripple" onClick={() => { setEditItem(null); reset(); setShowForm(!showForm); }}>
-          <Plus size={16} /> {showForm || editItem ? 'Cancel' : 'Add Item'}
+        <button id="add-vault-item" className="btn btn-primary btn-ripple" onClick={() => { 
+          if (showForm || editItem) {
+            setShowForm(false);
+            setEditItem(null);
+            reset();
+          } else {
+            setShowForm(true);
+            reset();
+          }
+        }}>
+          {showForm || editItem ? <X size={16} /> : <Plus size={16} />} {showForm || editItem ? 'Cancel' : 'Add Item'}
         </button>
       </div>
 
@@ -339,7 +357,8 @@ export default function VaultPage() {
                   </button>
                   <button className="btn btn-ghost btn-icon delete-btn" 
                     onClick={() => {
-                      if (window.confirm('Delete this item securely?')) deleteMutation.mutate(item.id);
+                      setItemToDelete(item);
+                      setDeleteVaultPassword('');
                     }} title="Delete Item">
                     <Trash2 size={16} />
                   </button>
@@ -446,6 +465,49 @@ export default function VaultPage() {
             <div className="vault-security-note" style={{ marginTop: 16 }}>
               <ShieldAlert size={12} />
               Content is cleared from memory when you close this dialog
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {itemToDelete && (
+        <div className="modal-overlay vault-view-modal" onClick={(e) => e.target === e.currentTarget && setItemToDelete(null)}>
+          <div className="modal-card animate-scale-in" style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <div>
+                <h3 className="text-danger" style={{ marginBottom: 4 }}>🗑️ Delete Item</h3>
+                <p className="text-muted text-sm">Delete "{itemToDelete.label}"</p>
+              </div>
+              <button className="modal-close" onClick={() => setItemToDelete(null)}><X size={18} /></button>
+            </div>
+            <div className="vault-decrypt-section" style={{ borderTop: 'none', paddingTop: 0 }}>
+              <p className="text-sm mb-4">Please enter your login password to confirm deletion. This action cannot be undone.</p>
+              <div className="form-group mb-4">
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="Login Password"
+                  value={deleteVaultPassword}
+                  onChange={e => setDeleteVaultPassword(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && deleteMutation.mutate({ id: itemToDelete.id, password: deleteVaultPassword })}
+                />
+                <div style={{ textAlign: 'right', marginTop: 8 }}>
+                  <span className="text-xs text-primary" style={{ cursor: 'pointer' }} onClick={() => toast('To reset your password, log out and click Forgot Password.', { icon: 'ℹ️' })}>
+                    Forgot password?
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" onClick={() => setItemToDelete(null)} disabled={deleteMutation.isPending}>Cancel</button>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => deleteMutation.mutate({ id: itemToDelete.id, password: deleteVaultPassword })}
+                  disabled={deleteMutation.isPending || !deleteVaultPassword}
+                >
+                  {deleteMutation.isPending ? <span className="spinner" /> : 'Delete Permanently'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

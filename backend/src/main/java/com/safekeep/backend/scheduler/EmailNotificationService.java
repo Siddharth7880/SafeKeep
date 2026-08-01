@@ -29,16 +29,16 @@ public class EmailNotificationService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
-    public void sendCheckinReminder(User user, int daysRemaining) {
+    public void sendCheckinReminder(User user, int hoursRemaining) {
         try {
             Context ctx = new Context();
             ctx.setVariable("userName", user.getFullName());
-            ctx.setVariable("daysRemaining", daysRemaining);
+            ctx.setVariable("hoursRemaining", hoursRemaining);
             ctx.setVariable("checkinUrl", baseUrl + "/dashboard");
             ctx.setVariable("nextDeadline", user.getNextCheckinDeadline());
 
             String html = templateEngine.process("email/checkin-reminder", ctx);
-            sendEmail(user.getEmail(), "⚠️ SafeKeep — Check-In Required (" + daysRemaining + " days remaining)", html);
+            sendEmail(user.getEmail(), "⚠️ SafeKeep — Check-In Required (" + hoursRemaining + " hours remaining)", html);
         } catch (Exception e) {
             log.error("Failed to send reminder to {}: {}", user.getEmail(), e.getMessage());
         }
@@ -85,18 +85,18 @@ public class EmailNotificationService {
         }
     }
 
-    public void sendReleaseNotification(Recipient recipient, User user, List<ReleaseToken> tokens) {
+    public void sendReleaseNotification(Recipient recipient, User user, byte[] zipBytes, String zipPassword) {
         try {
             Context ctx = new Context();
             ctx.setVariable("recipientName", recipient.getName());
             ctx.setVariable("userName", user.getFullName());
-            ctx.setVariable("tokens", tokens);
+            ctx.setVariable("zipPassword", zipPassword);
             ctx.setVariable("baseUrl", baseUrl);
 
             String html = templateEngine.process("email/release-notification", ctx);
-            sendEmail(recipient.getEmail(),
+            sendEmailWithAttachment(recipient.getEmail(),
                     "📬 Important Message from " + user.getFullName() + " — SafeKeep",
-                    html);
+                    html, zipBytes, "SecureVault.zip");
             log.info("Release notification sent to {}", recipient.getEmail());
         } catch (Exception e) {
             log.error("Failed to send release notification to {}: {}", recipient.getEmail(), e.getMessage());
@@ -112,5 +112,21 @@ public class EmailNotificationService {
         helper.setText(htmlContent, true);
         mailSender.send(message);
         log.debug("Email sent to {} with subject: {}", to, subject);
+    }
+
+    private void sendEmailWithAttachment(String to, String subject, String htmlContent, byte[] attachment, String attachmentName) throws Exception {
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+        helper.setFrom(fromEmail, "SafeKeep — Digital Legacy");
+        helper.setTo(to);
+        helper.setSubject(subject);
+        helper.setText(htmlContent, true);
+        
+        if (attachment != null) {
+            helper.addAttachment(attachmentName, new org.springframework.core.io.ByteArrayResource(attachment));
+        }
+        
+        mailSender.send(message);
+        log.debug("Email sent to {} with subject: {} and attachment", to, subject);
     }
 }

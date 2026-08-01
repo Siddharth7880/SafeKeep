@@ -37,7 +37,7 @@ public class ContentReleaseJob {
     private final ReleaseTokenRepository releaseTokenRepository;
     private final AuditLogService auditLogService;
     private final EmailNotificationService emailNotificationService;
-    private final SmsNotificationService smsNotificationService;
+    private final com.safekeep.backend.service.impl.VaultService vaultService;
 
     @Value("${app.release.token-secret}")
     private String releaseTokenSecret;
@@ -59,7 +59,6 @@ public class ContentReleaseJob {
             return;
         }
 
-        // Build recipient → items map
         Map<Recipient, List<VaultItem>> recipientItemMap = new HashMap<>();
         for (VaultItem item : items) {
             for (Recipient recipient : item.getRecipients()) {
@@ -73,44 +72,52 @@ public class ContentReleaseJob {
             Recipient recipient = entry.getKey();
             List<VaultItem> recipientItems = entry.getValue();
 
-            List<ReleaseToken> tokens = new ArrayList<>();
-            for (VaultItem item : recipientItems) {
-                try {
-                    String token = generateSignedToken(user.getId(), recipient.getId(), item.getId());
-                    ReleaseToken releaseToken = ReleaseToken.builder()
-                            .token(token)
-                            .userId(user.getId())
-                            .recipientId(recipient.getId())
-                            .vaultItemId(item.getId())
-                            .expiresAt(LocalDateTime.now().plusHours(tokenExpiryHours))
-                            .build();
-                    releaseTokenRepository.save(releaseToken);
-                    tokens.add(releaseToken);
-                } catch (Exception e) {
-                    log.error("Failed to generate token for recipient {} item {}: {}",
-                            recipient.getId(), item.getId(), e.getMessage());
+            String randomPassword = UUID.randomUUID().toString().substring(0, 8);
+            byte[] zipBytes = null;
+            
+            try {
+                java.io.File zipTemp = java.io.File.createTempFile("SecureVault", ".zip");
+                net.lingala.zip4j.model.ZipParameters zipParameters = new net.lingala.zip4j.model.ZipParameters();
+                zipParameters.setEncryptFiles(true);
+                zipParameters.setEncryptionMethod(net.lingala.zip4j.model.enums.EncryptionMethod.AES);
+                zipParameters.setAesKeyStrength(net.lingala.zip4j.model.enums.AesKeyStrength.KEY_STRENGTH_256);
+
+                try (net.lingala.zip4j.ZipFile zipFile = new net.lingala.zip4j.ZipFile(zipTemp, randomPassword.toCharArray())) {
+                    for (VaultItem item : recipientItems) {
+                        try {
+                            com.safekeep.backend.dto.response.VaultItemResponse decryptedResponse = vaultService.getVaultItem(user.getId(), item.getId(), "");
+                            if (Boolean.TRUE.equals(decryptedResponse.getHasContent())) {
+                                net.lingala.zip4j.model.ZipParameters textParams = new net.lingala.zip4j.model.ZipParameters(zipParameters);
+                                textParams.setFileNameInZip(item.getLabel().replaceAll("[^a-zA-Z0-9.-]", "_") + ".txt");
+                                zipFile.addStream(new java.io.ByteArrayInputStream(decryptedResponse.getContent().getBytes(StandardCharsets.UTF_8)), textParams);
+                            }
+                            if (Boolean.TRUE.equals(decryptedResponse.getHasFile())) {
+                                com.safekeep.backend.service.impl.VaultService.DecryptedFile decFile = vaultService.downloadVaultItemFile(user.getId(), item.getId(), "");
+                                net.lingala.zip4j.model.ZipParameters fileParams = new net.lingala.zip4j.model.ZipParameters(zipParameters);
+                                fileParams.setFileNameInZip(decFile.originalFileName());
+                                zipFile.addStream(new java.io.ByteArrayInputStream(decFile.bytes()), fileParams);
+                            }
+                        } catch (Exception e) {
+                            log.error("Failed to decrypt and zip item {}: {}", item.getId(), e.getMessage());
+                        }
+                    }
                 }
+                zipBytes = java.nio.file.Files.readAllBytes(zipTemp.toPath());
+                zipTemp.delete();
+            } catch (Exception e) {
+                log.error("Failed to create ZIP file for recipient {}: {}", recipient.getEmail(), e.getMessage());
             }
 
-            // Send email & SMS to recipient
-            try {
-                emailNotificationService.sendReleaseNotification(recipient, user, tokens);
-                smsNotificationService.sendReleaseNotification(recipient, user);
-            } catch (Exception e) {
-                log.error("Failed to send release notification to {}: {}", recipient.getEmail(), e.getMessage());
+            if (zipBytes != null) {
+                try {
+                    emailNotificationService.sendReleaseNotification(recipient, user, zipBytes, randomPassword);
+                } catch (Exception e) {
+                    log.error("Failed to send release notification to {}: {}", recipient.getEmail(), e.getMessage());
+                }
             }
         }
 
         auditLogService.log(user.getId(), AuditEventType.CONTENT_RELEASED, "SCHEDULER",
-                "Content released to " + recipientItemMap.size() + " recipients with " + items.size() + " items");
-    }
-
-    private String generateSignedToken(UUID userId, UUID recipientId, UUID vaultItemId) throws Exception {
-        String payload = userId + ":" + recipientId + ":" + vaultItemId + ":" + System.currentTimeMillis();
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(releaseTokenSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        byte[] signature = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes()) + "." +
-               Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
+                "Content released to " + recipientItemMap.size() + " recipients with " + items.size() + " items via ZIP");
     }
 }

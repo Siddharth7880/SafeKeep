@@ -25,8 +25,6 @@ export default function SettingsPage() {
       checkinIntervalDays: profile?.checkinIntervalDays || 7,
       gracePeriodDays: profile?.gracePeriodDays || 3,
       emailNotificationsEnabled: profile?.emailNotificationsEnabled ?? true,
-      smsNotificationsEnabled: profile?.smsNotificationsEnabled ?? false,
-      phoneNumber: profile?.phoneNumber || '',
     }
   });
 
@@ -82,6 +80,7 @@ export default function SettingsPage() {
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="flex-col gap-6 stagger-children">
+
         {/* Check-In Schedule */}
         <div className="card glass-panel">
           <div className="flex items-center gap-2 mb-4">
@@ -116,17 +115,6 @@ export default function SettingsPage() {
                 <div className="text-muted text-sm">Receive check-in reminders by email</div>
               </div>
             </label>
-            <label className="flex items-center gap-3" style={{ cursor: 'pointer' }}>
-              <input type="checkbox" style={{ accentColor: 'var(--primary)', width: 16, height: 16 }} {...register('smsNotificationsEnabled')} />
-              <div>
-                <div style={{ fontWeight: 500, fontSize: 14 }}>SMS Notifications</div>
-                <div className="text-muted text-sm">Receive urgent warnings via SMS</div>
-              </div>
-            </label>
-            <div className="form-group mt-2">
-              <label className="form-label">Phone Number (for SMS)</label>
-              <input className="form-input" type="tel" placeholder="+1 555 000 0000" {...register('phoneNumber')} />
-            </div>
           </div>
         </div>
 
@@ -139,6 +127,36 @@ export default function SettingsPage() {
           {updateMutation.isPending ? <span className="spinner" /> : <><Save size={16} /> Save Settings</>}
         </motion.button>
       </form>
+
+      {/* Developer / Test Zone */}
+      <div className="card glass-panel" style={{ marginTop: 40, borderColor: 'rgba(234, 179, 8, 0.2)' }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Settings2 size={18} className="text-warning" style={{ color: '#eab308' }} />
+          <h3 style={{ color: '#eab308' }}>Developer / Test Actions</h3>
+        </div>
+        <p className="text-muted text-sm mb-4">
+          Instantly simulate a missed deadline and trigger the final release. 
+          This will email recipients if they have items assigned to them.
+        </p>
+        <button 
+          type="button" 
+          className="btn btn-ghost" 
+          style={{ border: '1px solid #eab308', color: '#eab308' }}
+          onClick={() => {
+            import('../api/client').then(({ testApi }) => {
+              const loadingToast = toast.loading('Triggering release...');
+              testApi.triggerRelease()
+                .then(() => {
+                  toast.success('Test release triggered successfully! Check recipient emails.', { id: loadingToast });
+                  queryClient.invalidateQueries({ queryKey: ['profile'] });
+                })
+                .catch((e) => toast.error(e.response?.data?.message || 'Failed to trigger release', { id: loadingToast }));
+            });
+          }}
+        >
+          Force Trigger Release (Test)
+        </button>
+      </div>
 
       {/* Danger Zone */}
       <div className="card glass-panel" style={{ marginTop: 40, borderColor: 'rgba(239, 68, 68, 0.2)' }}>
@@ -153,7 +171,7 @@ export default function SettingsPage() {
         <AnimatePresence mode="wait">
           {!isDeleting ? (
             <motion.div key="delete-btn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <button className="btn btn-danger" onClick={() => setIsDeleting(true)}>
+              <button type="button" className="btn btn-danger" onClick={() => setIsDeleting(true)}>
                 Delete Account
               </button>
             </motion.div>
@@ -180,10 +198,10 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="flex gap-2">
-                  <button className="btn btn-danger" onClick={handleConfirmDelete} disabled={deleteAccountMutation.isPending}>
+                  <button type="button" className="btn btn-danger" onClick={handleConfirmDelete} disabled={deleteAccountMutation.isPending}>
                     {deleteAccountMutation.isPending ? <span className="spinner" /> : 'Confirm Deletion'}
                   </button>
-                  <button className="btn btn-ghost" onClick={() => { setIsDeleting(false); setDeletePassword(''); }} disabled={deleteAccountMutation.isPending}>
+                  <button type="button" className="btn btn-ghost" onClick={() => { setIsDeleting(false); setDeletePassword(''); }} disabled={deleteAccountMutation.isPending}>
                     Cancel
                   </button>
                 </div>

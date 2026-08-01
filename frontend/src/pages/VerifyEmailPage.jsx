@@ -72,7 +72,7 @@ export default function VerifyEmailPage() {
   if (!email) return <Navigate to="/register" replace />;
 
   return (
-    <div className="auth-page">
+    <div className="auth-page" style={{ justifyContent: 'center', alignItems: 'center' }}>
       <div className="auth-bg-glow" />
       <div className="verify-card">
         <div className="verify-icon">

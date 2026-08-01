@@ -4,6 +4,8 @@ import {
   Shield, LayoutDashboard, Lock, Users, Settings, ScrollText, LogOut, Menu, X, Bell
 } from 'lucide-react';
 import { useState } from 'react';
+import ProfileModal from './ProfileModal';
+import { API_BASE } from '../api/client';
 import './Layout.css';
 
 const navItems = [
@@ -19,6 +21,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -54,9 +57,13 @@ export default function Layout({ children }) {
 
         {/* User status */}
         {user && (
-          <div className="sidebar-user">
+          <div className="sidebar-user" onClick={() => setProfileModalOpen(true)} style={{ cursor: 'pointer' }}>
             <div className="sidebar-user-avatar">
-              {user.fullName?.charAt(0).toUpperCase() || 'U'}
+              {user.profilePhotoUrl ? (
+                <img src={`${API_BASE}${user.profilePhotoUrl}`} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+              ) : (
+                user.fullName?.charAt(0).toUpperCase() || 'U'
+              )}
             </div>
             <div className="sidebar-user-info">
               <div className="sidebar-user-name">{user.fullName}</div>
@@ -107,6 +114,8 @@ export default function Layout({ children }) {
           {children}
         </main>
       </div>
+      
+      <ProfileModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
     </div>
   );
 }

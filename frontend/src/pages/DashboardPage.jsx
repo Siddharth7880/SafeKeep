@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { checkinApi, authApi } from '../api/client';
+import { checkinApi, authApi, auditApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import { Shield, Clock, CheckCircle, AlertTriangle, XCircle, Pause, Play, TrendingUp, Calendar } from 'lucide-react';
+import { Shield, Clock, CheckCircle, AlertTriangle, XCircle, Pause, Play, TrendingUp, Calendar, Settings } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -104,7 +104,13 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [deadlineString, isOverdue, isReleased, isPaused]);
 
-  if (isLoading) return (
+  // Fetch Audit Logs for activity feed and heatmap
+  const { data: logsRes, isLoading: logsLoading } = useQuery({
+    queryKey: ['auditLogs'],
+    queryFn: () => auditApi.getLogs(0, 50),
+  });
+
+  if (isLoading || logsLoading) return (
     <div className="page-container flex items-center justify-center" style={{ minHeight: '60vh' }}>
       <div className="w-full max-w-lg space-y-4">
         <div className="skeleton-shimmer h-32 w-full mb-4"></div>
@@ -123,15 +129,57 @@ export default function DashboardPage() {
     show: { opacity: 1, y: 0, transition: { type: 'spring', damping: 20, stiffness: 100 } }
   };
 
-  // Generate Empty Heatmap Data for now (until connected to backend)
-  const heatmapData = Array.from({ length: 28 }).map((_, i) => ({
-    date: new Date(Date.now() - (27 - i) * 24 * 60 * 60 * 1000),
-    active: false
-  }));
-  const daysOfWeek = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const logs = logsRes?.data?.data?.content || [];
 
-  // Empty Activity Feed (no fake data)
-  const activityFeed = [];
+  const parseLogDate = (d) => {
+    if (!d) return null;
+    try {
+      if (Array.isArray(d)) {
+        return new Date(d[0], d[1] - 1, d[2], d[3] || 0, d[4] || 0, d[5] || 0);
+      }
+      const dt = new Date(d);
+      return isNaN(dt.getTime()) ? null : dt;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Generate Heatmap Data based on actual checkins
+  const heatmapData = Array.from({ length: 28 }).map((_, i) => {
+    const d = new Date(Date.now() - (27 - i) * 24 * 60 * 60 * 1000);
+    const dateStr = d.toISOString().split('T')[0];
+    const hasCheckin = logs.some(log => {
+      const logDate = parseLogDate(log.createdAt);
+      return log.eventType === 'CHECKIN' && logDate && logDate.toISOString().split('T')[0] === dateStr;
+    });
+    return { date: d, active: hasCheckin };
+  });
+  const daysOfWeek = Array.from({ length: 7 }).map((_, i) => {
+    const d = heatmapData[i].date;
+    return ['S', 'M', 'T', 'W', 'T', 'F', 'S'][d.getDay()];
+  });
+
+  // Populate Activity Feed
+  const activityFeed = logs.slice(0, 5).map(log => {
+    let icon = Clock;
+    const eventType = log.eventType || '';
+    if (eventType === 'CHECKIN') icon = CheckCircle;
+    if (eventType.includes('VAULT')) icon = Shield;
+    if (eventType.includes('SETTINGS')) icon = Settings;
+    
+    const logDate = parseLogDate(log.createdAt);
+    let timeStr = 'unknown time';
+    try {
+      if (logDate) timeStr = formatDistanceToNow(logDate, { addSuffix: true });
+    } catch (e) {}
+    
+    return {
+      id: log.id,
+      icon,
+      title: log.details || eventType.replace(/_/g, ' '),
+      time: timeStr
+    };
+  });
 
   return (
     <motion.div className="dashboard-content" variants={containerVariants} initial="hidden" animate="show">
