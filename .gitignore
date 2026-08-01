@@ -2,8 +2,6 @@
 
 # Secrets
 **/.env
-**/application.properties
-!**/application.properties.example
 **/.env.local
 **/.env.production
 
