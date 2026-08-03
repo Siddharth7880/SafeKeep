@@ -6,28 +6,39 @@ import com.safekeep.backend.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-import jakarta.mail.internet.MimeMessage;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class EmailNotificationService {
 
-    private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
+    private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${app.base-url}")
     private String baseUrl;
 
-    @Value("${spring.mail.username}")
+    @Value("${brevo.api-key}")
+    private String brevoApiKey;
+
+    @Value("${brevo.sender.email:noreply@safekeep.com}")
     private String fromEmail;
+
+    @Value("${brevo.sender.name:SafeKeep — Digital Legacy}")
+    private String fromName;
 
     public void sendCheckinReminder(User user, int hoursRemaining) {
         try {
@@ -107,29 +118,38 @@ public class EmailNotificationService {
     }
 
     private void sendEmail(String to, String subject, String htmlContent) throws Exception {
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-        helper.setFrom(fromEmail, "SafeKeep — Digital Legacy");
-        helper.setTo(to);
-        helper.setSubject(subject);
-        helper.setText(htmlContent, true);
-        mailSender.send(message);
-        log.debug("Email sent to {} with subject: {}", to, subject);
+        sendEmailWithAttachment(to, subject, htmlContent, null, null);
     }
 
     private void sendEmailWithAttachment(String to, String subject, String htmlContent, byte[] attachment, String attachmentName) throws Exception {
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-        helper.setFrom(fromEmail, "SafeKeep — Digital Legacy");
-        helper.setTo(to);
-        helper.setSubject(subject);
-        helper.setText(htmlContent, true);
-        
-        if (attachment != null) {
-            helper.addAttachment(attachmentName, new org.springframework.core.io.ByteArrayResource(attachment));
+        String url = "https://api.brevo.com/v3/smtp/email";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("api-key", brevoApiKey);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("sender", Map.of("name", fromName, "email", fromEmail));
+        body.put("to", List.of(Map.of("email", to)));
+        body.put("subject", subject);
+        body.put("htmlContent", htmlContent);
+
+        if (attachment != null && attachmentName != null) {
+            String base64Content = Base64.getEncoder().encodeToString(attachment);
+            body.put("attachment", List.of(Map.of(
+                    "name", attachmentName,
+                    "content", base64Content
+            )));
         }
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
         
-        mailSender.send(message);
-        log.debug("Email sent to {} with subject: {} and attachment", to, subject);
+        if (response.getStatusCode().is2xxSuccessful()) {
+            log.debug("Email sent to {} with subject: {} via Brevo", to, subject);
+        } else {
+            log.error("Failed to send email via Brevo. Status: {}, Response: {}", response.getStatusCode(), response.getBody());
+            throw new RuntimeException("Brevo API error: " + response.getBody());
+        }
     }
 }

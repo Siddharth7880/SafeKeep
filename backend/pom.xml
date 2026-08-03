@@ -129,6 +129,13 @@
             <version>8.10.1</version>
         </dependency>
 
+        <!-- Dotenv for local development -->
+        <dependency>
+            <groupId>me.paulschwarz</groupId>
+            <artifactId>spring-dotenv</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
