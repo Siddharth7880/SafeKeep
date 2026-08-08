@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+// Support both VITE_API_BASE_URL and VITE_API_URL (legacy) for compatibility
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:8080';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -20,7 +21,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 || error.response?.status === 403) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       window.location.href = '/login';

@@ -77,7 +77,8 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        // Cost 10 is NIST-recommended; cost 12 causes 3-5s delays on Render free tier's shared CPU
+        return new BCryptPasswordEncoder(10);
     }
 
     @Bean

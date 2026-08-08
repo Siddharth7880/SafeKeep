@@ -26,7 +26,7 @@ import java.util.Map;
 public class EmailNotificationService {
 
     private final TemplateEngine templateEngine;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate; // Injected with timeouts from AsyncConfig
 
     @Value("${app.base-url}")
     private String baseUrl;
