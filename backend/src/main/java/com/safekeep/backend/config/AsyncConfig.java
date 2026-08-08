@@ -1,12 +1,11 @@
 package com.safekeep.backend.config;
 
-import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.RestTemplate;
 
-import java.time.Duration;
 import java.util.concurrent.Executor;
 
 @Configuration
@@ -29,15 +28,16 @@ public class AsyncConfig {
     }
 
     /**
-     * RestTemplate with explicit timeouts.
+     * RestTemplate with explicit timeouts via SimpleClientHttpRequestFactory.
      * Without these, a slow/unreachable Brevo server will make the async thread
      * hang indefinitely. 10s connect + 15s read is generous but bounded.
+     * Note: RestTemplateBuilder.connectTimeout(Duration) was removed in Spring Boot 3.x.
      */
     @Bean
-    public RestTemplate restTemplate(RestTemplateBuilder builder) {
-        return builder
-                .connectTimeout(Duration.ofSeconds(10))
-                .readTimeout(Duration.ofSeconds(15))
-                .build();
+    public RestTemplate restTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10_000); // 10 seconds
+        factory.setReadTimeout(15_000);    // 15 seconds
+        return new RestTemplate(factory);
     }
 }
