@@ -47,7 +47,10 @@ public class AuthService {
         User user;
 
         byte[] salt = aesEncryptionUtil.generateSalt();
-        String verificationCode = String.format("%06d", new java.util.Random().nextInt(999999));
+        // Cryptographically secure 6-digit OTP — full 0-999999 range
+        java.security.SecureRandom secureRandom = new java.security.SecureRandom();
+        String verificationCode = String.format("%06d", secureRandom.nextInt(1_000_000));
+        LocalDateTime tokenExpiry = LocalDateTime.now().plusMinutes(15);
 
         if (existingUserOpt.isPresent()) {
             user = existingUserOpt.get();
@@ -59,6 +62,7 @@ public class AuthService {
             user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
             user.setEncryptedMasterKeySalt(aesEncryptionUtil.toBase64(salt));
             user.setEmailVerificationToken(verificationCode);
+            user.setEmailVerificationTokenExpiry(tokenExpiry);
             user.setNextCheckinDeadline(LocalDateTime.now().plusDays(7));
             user.setLastCheckinAt(LocalDateTime.now());
         } else {
@@ -71,6 +75,7 @@ public class AuthService {
                     .lastCheckinAt(LocalDateTime.now())
                     .emailVerified(false)
                     .emailVerificationToken(verificationCode)
+                    .emailVerificationTokenExpiry(tokenExpiry)
                     .build();
         }
 
@@ -127,8 +132,18 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid verification code");
         }
 
+        // Enforce 15-minute expiry
+        if (user.getEmailVerificationTokenExpiry() == null
+                || LocalDateTime.now().isAfter(user.getEmailVerificationTokenExpiry())) {
+            user.setEmailVerificationToken(null);
+            user.setEmailVerificationTokenExpiry(null);
+            userRepository.save(user);
+            throw new IllegalArgumentException("Verification code has expired. Please register again to receive a new code.");
+        }
+
         user.setEmailVerified(true);
         user.setEmailVerificationToken(null);
+        user.setEmailVerificationTokenExpiry(null);
         userRepository.save(user);
 
         // Send Welcome Email
@@ -207,7 +222,7 @@ public class AuthService {
         try {
             java.nio.file.Path path = java.nio.file.Paths.get("uploads/profiles/", filename);
             org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());
-            if (resource.exists() || resource.isReadable()) {
+            if (resource.exists() && resource.isReadable()) {
                 return resource;
             } else {
                 throw new RuntimeException("Could not read the file!");

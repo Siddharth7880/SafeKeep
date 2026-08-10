@@ -42,7 +42,7 @@ export default function VerifyEmailPage() {
       setDigits(queryCode.split(''));
       verifyMutation.mutate({ email, code: queryCode });
     }
-  }, [email, queryCode, autoVerifyFired, verifyMutation]);
+  }, [email, queryCode, autoVerifyFired]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDigitChange = (index, value) => {
     if (!/^\d?$/.test(value)) return;

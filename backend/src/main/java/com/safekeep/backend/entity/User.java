@@ -93,6 +93,9 @@ public class User {
     @Column(name = "email_verification_token")
     private String emailVerificationToken;
 
+    @Column(name = "email_verification_token_expiry")
+    private LocalDateTime emailVerificationTokenExpiry;
+
     @Column(name = "profile_photo_url", length = 500)
     private String profilePhotoUrl;
 

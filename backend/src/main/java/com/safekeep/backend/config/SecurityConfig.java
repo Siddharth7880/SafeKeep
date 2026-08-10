@@ -14,7 +14,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -77,8 +77,10 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        // Cost 10 is NIST-recommended; cost 12 causes 3-5s delays on Render free tier's shared CPU
-        return new BCryptPasswordEncoder(10);
+        // Argon2id — memory-hard, GPU/ASIC resistant (Password Hashing Competition winner)
+        // Parameters: saltLength=16, hashLength=32, parallelism=1, memory=16384 KB (16MB), iterations=2
+        // Balanced for free-tier servers: ~300ms per hash, 16MB RAM
+        return new Argon2PasswordEncoder(16, 32, 1, 16384, 2);
     }
 
     @Bean

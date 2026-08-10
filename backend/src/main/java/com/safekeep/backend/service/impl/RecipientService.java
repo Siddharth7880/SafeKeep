@@ -67,6 +67,12 @@ public class RecipientService {
         Recipient recipient = recipientRepository.findByIdAndUserId(recipientId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Recipient not found"));
 
+        // Check for duplicate email among OTHER recipients of this user (excluding self)
+        if (!recipient.getEmail().equalsIgnoreCase(request.getEmail())
+                && recipientRepository.existsByUserIdAndEmail(userId, request.getEmail())) {
+            throw new IllegalArgumentException("Another recipient with this email already exists");
+        }
+
         recipient.setName(request.getName());
         recipient.setEmail(request.getEmail());
         recipient.setPhone(request.getPhone());

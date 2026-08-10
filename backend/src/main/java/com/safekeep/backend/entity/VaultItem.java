@@ -52,6 +52,21 @@ public class VaultItem {
     @Column(name = "dek_iv", nullable = false, length = 64)
     private String dekIv;
 
+    // PBKDF2 salt used to derive the master key from the user's password
+    @Column(name = "dek_salt", length = 64)
+    private String dekSalt;
+
+    // Server-side DEK copy: encrypted with Argon2id(serverSecret, dekSaltServer)
+    // Used exclusively by ContentReleaseJob — the server secret never leaves the server
+    @Column(name = "encrypted_dek_server", length = 512)
+    private String encryptedDekServer;
+
+    @Column(name = "dek_iv_server", length = 64)
+    private String dekIvServer;
+
+    @Column(name = "dek_salt_server", length = 64)
+    private String dekSaltServer;
+
     @Column(name = "is_active")
     @Builder.Default
     private Boolean isActive = true;

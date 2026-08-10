@@ -21,7 +21,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    // Only redirect to login on 401 (unauthenticated).
+    // 403 (Forbidden) means the session is valid but the action is not allowed
+    // (e.g. wrong vault password returning 401 from our handler — we handle that separately).
+    if (error.response?.status === 401) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       window.location.href = '/login';
