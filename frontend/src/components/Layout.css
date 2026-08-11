@@ -249,6 +249,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .topbar-right {
@@ -261,6 +262,7 @@
 .layout-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* Mobile Overlay */
