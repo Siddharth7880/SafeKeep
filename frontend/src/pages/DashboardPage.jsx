@@ -1,4 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
+
+/**
+ * Parse a LocalDateTime string from the backend (e.g. "2026-08-12T14:51:45")
+ * as UTC. Without the trailing 'Z', browsers treat the string as LOCAL time,
+ * which causes the deadline to appear offset by the user's timezone.
+ * Handles both bare strings and already-UTC strings ending in 'Z'.
+ */
+function parseUTCDate(str) {
+  if (!str) return null;
+  if (Array.isArray(str)) {
+    // Fallback: Spring sometimes returns [year, month, day, hour, min, sec]
+    return new Date(Date.UTC(str[0], str[1] - 1, str[2], str[3] || 0, str[4] || 0, str[5] || 0));
+  }
+  const s = String(str);
+  // Append 'Z' only if no timezone info present
+  const withZ = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + 'Z';
+  const d = new Date(withZ);
+  return isNaN(d.getTime()) ? null : d;
+}
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkinApi, authApi, auditApi } from '../api/client';
 import { useAuthStore } from '../store/authStore';
@@ -136,7 +155,7 @@ export default function DashboardPage() {
   const cfg = statusConfig[status] || statusConfig.ACTIVE;
   const Icon = cfg.icon;
   const deadlineString = profile?.nextCheckinDeadline;
-  const deadline = deadlineString ? new Date(deadlineString) : null;
+  const deadline = deadlineString ? parseUTCDate(deadlineString) : null;
   const daysLeft = profile?.daysUntilDeadline ?? 0;
   const isOverdue = profile?.isOverdue;
   const isReleased = status === 'RELEASED';
@@ -159,7 +178,7 @@ export default function DashboardPage() {
   const [timeLeft, setTimeLeft] = useState({ h: '', m: '', s: '' });
   useEffect(() => {
     if (!deadlineString || isOverdue || isReleased || isPaused) return;
-    const deadlineDate = new Date(deadlineString);
+    const deadlineDate = parseUTCDate(deadlineString);
     const tick = () => {
       const diff = deadlineDate - new Date();
       if (diff > 0 && diff <= 24 * 3600 * 1000) {
@@ -192,12 +211,7 @@ export default function DashboardPage() {
   );
 
   const parseLogDate = (d) => {
-    if (!d) return null;
-    try {
-      if (Array.isArray(d)) return new Date(d[0], d[1] - 1, d[2], d[3] || 0, d[4] || 0, d[5] || 0);
-      const dt = new Date(d);
-      return isNaN(dt.getTime()) ? null : dt;
-    } catch { return null; }
+    try { return parseUTCDate(d); } catch { return null; }
   };
 
   const logs = logsRes?.data?.data?.content || [];
