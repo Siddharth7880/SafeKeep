@@ -17,14 +17,14 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 — clear token and redirect to login
+// Handle 401 — clear token and redirect to login.
+// Skip vault endpoints: wrong vault password is a 403 on the backend, but
+// as a defensive guard we never want a vault request to log the user out.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Only redirect to login on 401 (unauthenticated).
-    // 403 (Forbidden) means the session is valid but the action is not allowed
-    // (e.g. wrong vault password returning 401 from our handler — we handle that separately).
-    if (error.response?.status === 401) {
+    const isVaultRequest = error.config?.url?.includes('/api/vault');
+    if (error.response?.status === 401 && !isVaultRequest) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       window.location.href = '/login';

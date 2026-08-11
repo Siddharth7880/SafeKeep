@@ -45,12 +45,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException ex) {
-        // Vault wrong-password errors surface as RuntimeException with a descriptive message
+        // Vault wrong-password errors surface as RuntimeException with a descriptive message.
+        // We return 403 FORBIDDEN (not 401) because the user IS authenticated (valid JWT),
+        // they just provided the wrong vault-specific credential.
+        // Returning 401 would incorrectly trigger the frontend's "logout on 401" interceptor.
         String message = ex.getMessage();
         if (message != null && (message.contains("wrong password") || message.contains("Wrong vault")
                 || message.contains("Failed to decrypt") || message.contains("Failed to update vault")
                 || message.contains("Failed to delete vault"))) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiResponse.error("Wrong vault password"));
         }
         log.error("Unhandled RuntimeException: ", ex);
