@@ -44,11 +44,10 @@ public class CheckinService {
 
         if (request.getCheckinIntervalDays() != null) {
             user.setCheckinIntervalDays(request.getCheckinIntervalDays());
-            // Recalculate next deadline from last check-in
-            if (user.getLastCheckinAt() != null) {
-                user.setNextCheckinDeadline(
-                        user.getLastCheckinAt().plusDays(request.getCheckinIntervalDays()));
-            }
+            // Recalculate next deadline from NOW so the user always gets
+            // the full interval period, regardless of when they last checked in.
+            user.setNextCheckinDeadline(
+                    java.time.LocalDateTime.now().plusDays(request.getCheckinIntervalDays()));
         }
         if (request.getGracePeriodDays() != null) {
             user.setGracePeriodDays(request.getGracePeriodDays());
