@@ -10,6 +10,8 @@ import RecipientsPage from '../pages/RecipientsPage';
 import SettingsPage from '../pages/SettingsPage';
 import AuditLogPage from '../pages/AuditLogPage';
 import VerifyEmailPage from '../pages/VerifyEmailPage';
+import ForgotPasswordPage from '../pages/ForgotPasswordPage';
+import ResetPasswordPage from '../pages/ResetPasswordPage';
 import Layout from './Layout';
 import PageTransition from './PageTransition';
 
@@ -23,6 +25,8 @@ export default function AnimatedRoutes() {
         <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
         <Route path="/register" element={<PageTransition><RegisterPage /></PageTransition>} />
         <Route path="/verify-email" element={<PageTransition><VerifyEmailPage /></PageTransition>} />
+        <Route path="/forgot-password" element={<PageTransition><ForgotPasswordPage /></PageTransition>} />
+        <Route path="/reset-password" element={<PageTransition><ResetPasswordPage /></PageTransition>} />
         
         <Route path="/dashboard" element={<ProtectedRoute><Layout><PageTransition><DashboardPage /></PageTransition></Layout></ProtectedRoute>} />
         <Route path="/vault" element={<ProtectedRoute><Layout><PageTransition><VaultPage /></PageTransition></Layout></ProtectedRoute>} />

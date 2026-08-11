@@ -102,6 +102,16 @@ export default function LoginPage() {
                 </button>
               </div>
               {errors.password && <span className="form-error">{errors.password.message}</span>}
+              <div style={{ textAlign: 'right', marginTop: 6 }}>
+                <Link
+                  to="/forgot-password"
+                  style={{ fontSize: 13, color: 'var(--text-secondary)', transition: 'color 0.2s' }}
+                  onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
+                  onMouseLeave={(e) => e.target.style.color = 'var(--text-secondary)'}
+                >
+                  Forgot password?
+                </Link>
+              </div>
             </div>
 
             <button

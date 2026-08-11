@@ -1,7 +1,9 @@
 package com.safekeep.backend.controller;
 
+import com.safekeep.backend.dto.request.ForgotPasswordRequest;
 import com.safekeep.backend.dto.request.LoginRequest;
 import com.safekeep.backend.dto.request.RegisterRequest;
+import com.safekeep.backend.dto.request.ResetPasswordRequest;
 import com.safekeep.backend.dto.request.VerifyEmailRequest;
 import com.safekeep.backend.dto.response.ApiResponse;
 import com.safekeep.backend.dto.response.AuthResponse;
@@ -85,7 +87,7 @@ public class AuthController {
     public ResponseEntity<org.springframework.core.io.Resource> getProfilePhoto(@PathVariable String filename) {
         org.springframework.core.io.Resource file = authService.getProfilePhoto(filename);
         return ResponseEntity.ok()
-                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + file.getFilename() + "\"")
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline; filename=" + file.getFilename())
                 .body(file);
     }
 
@@ -108,6 +110,24 @@ public class AuthController {
             @Valid @RequestBody VerifyEmailRequest request) {
         AuthResponse response = authService.verifyEmail(request.getEmail(), request.getCode());
         return ResponseEntity.ok(ApiResponse.success(response, "Email verified successfully"));
+    }
+
+    @PostMapping("/forgot-password")
+    @Operation(summary = "Request a password reset email")
+    public ResponseEntity<ApiResponse<String>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request.getEmail());
+        return ResponseEntity.ok(ApiResponse.success("ok",
+                "If an account with that email exists, a password reset link has been sent."));
+    }
+
+    @PostMapping("/reset-password")
+    @Operation(summary = "Reset password using email token")
+    public ResponseEntity<ApiResponse<String>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok(ApiResponse.success("ok",
+                "Password has been reset successfully. You can now log in."));
     }
 
     private UUID resolveUserId(UserDetails userDetails) {

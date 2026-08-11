@@ -152,4 +152,18 @@ public class EmailNotificationService {
             throw new RuntimeException("Brevo API error: " + response.getBody());
         }
     }
+
+    @org.springframework.scheduling.annotation.Async
+    public void sendPasswordResetEmail(User user, String token) {
+        try {
+            log.info("Password reset link for {}: {}/reset-password?token={}", user.getEmail(), baseUrl, token);
+            Context ctx = new Context();
+            ctx.setVariable("userName", user.getFullName());
+            ctx.setVariable("resetLink", baseUrl + "/reset-password?token=" + token);
+            String html = templateEngine.process("email/password-reset", ctx);
+            sendEmail(user.getEmail(), "Reset your SafeKeep Password", html);
+        } catch (Exception e) {
+            log.error("Failed to send password reset email to {}: {}", user.getEmail(), e.getMessage());
+        }
+    }
 }

@@ -267,4 +267,48 @@ public class AuthService {
                 .streakDays(user.getStreakDays())
                 .build();
     }
+
+    // ==================== Password Reset Flow ====================
+
+    /**
+     * Initiates a password reset. Always returns normally (anti-enumeration).
+     * Generates a secure random UUID token, valid for 30 minutes, and emails a reset link.
+     */
+    @Transactional
+    public void forgotPassword(String email) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            String token = java.util.UUID.randomUUID().toString();
+            user.setPasswordResetToken(token);
+            user.setPasswordResetTokenExpiry(LocalDateTime.now().plusMinutes(30));
+            userRepository.save(user);
+            emailNotificationService.sendPasswordResetEmail(user, token);
+            log.info("Password reset token issued for user {}", user.getId());
+        });
+    }
+
+    /**
+     * Resets the password using a valid token sent by email.
+     * Validates expiry, re-hashes with Argon2id, then clears the token atomically.
+     */
+    @Transactional
+    public void resetPassword(String token, String newPassword) {
+        User user = userRepository.findByPasswordResetToken(token)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid or expired password reset link."));
+
+        if (user.getPasswordResetTokenExpiry() == null
+                || LocalDateTime.now().isAfter(user.getPasswordResetTokenExpiry())) {
+            user.setPasswordResetToken(null);
+            user.setPasswordResetTokenExpiry(null);
+            userRepository.save(user);
+            throw new IllegalArgumentException("This password reset link has expired. Please request a new one.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetTokenExpiry(null);
+        userRepository.save(user);
+
+        auditLogService.log(user.getId(), AuditEventType.SETTINGS_UPDATED, "USER", "Password reset via email link");
+        log.info("Password successfully reset for user {}", user.getId());
+    }
 }

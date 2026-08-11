@@ -41,4 +41,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                                                @Param("urgentThreshold") LocalDateTime urgentThreshold);
 
     List<User> findAllByStatus(UserStatus status);
+
+    Optional<User> findByPasswordResetToken(String token);
 }
