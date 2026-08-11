@@ -1,13 +1,12 @@
 <div align="center">
 
-# 🛡️ SafeKeep
+<img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=600&size=26&pause=1000&color=6366F1&center=true&vCenter=true&width=600&lines=The+Ultimate+Digital+Dead+Man's+Switch;Secure+Your+Digital+Legacy;AES-256+Zero-Knowledge+Vault;Automated+Recipient+Release" alt="Typing SVG" />
 
-**The Ultimate Digital Dead Man's Switch & Secure Legacy Platform**
+<br/>
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.2-6DB33F?style=for-the-badge&logo=springboot)](https://spring.io/)
 [![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-4169E1?style=for-the-badge&logo=postgresql)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 *Secure your digital assets. Automate your legacy. Rest in peace knowing your loved ones are covered.*
 
@@ -107,7 +106,6 @@ safekeep/
 ## 🤝 Contributing
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/Siddharth7880/SafeKeep/issues). 
 
-Please read the `CONTRIBUTING.md` (coming soon) for details on our code of conduct, and the process for submitting pull requests.
-
-## 📜 License
-This project is licensed under the MIT License - see the `LICENSE` file for details.
+<div align="center">
+  <img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%">
+</div>
