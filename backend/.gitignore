@@ -9,6 +9,10 @@ target/
 # Application secrets — NEVER COMMIT
 src/main/resources/application.properties
 
+# Uploaded / encrypted file blobs — NEVER COMMIT
+# These are binary data artifacts generated at runtime, not source files
+uploads/
+
 # IDE
 .idea/
 *.iml

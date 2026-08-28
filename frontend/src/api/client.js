@@ -18,13 +18,10 @@ api.interceptors.request.use((config) => {
 });
 
 // Handle 401 — clear token and redirect to login.
-// Skip vault endpoints: wrong vault password is a 403 on the backend, but
-// as a defensive guard we never want a vault request to log the user out.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const isVaultRequest = error.config?.url?.includes('/api/vault');
-    if (error.response?.status === 401 && !isVaultRequest) {
+    if (error.response?.status === 401) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       window.location.href = '/login';
@@ -59,27 +56,55 @@ export const checkinApi = {
 };
 
 // ==================== Vault API ====================
+// Zero-knowledge design:
+//   - All encryption/decryption happens in the browser (see src/crypto/vault.js)
+//   - The vault password NEVER leaves the browser
+//   - The server receives and stores only ciphertext, IVs, encrypted DEKs, and salts
+//   - No X-Vault-Password header — the server has no role in decryption
+
 export const vaultApi = {
+  /** Returns a list of vault items with metadata only (no ciphertext — listed separately) */
   list: () => api.get('/api/vault/items'),
-  get: (id, password) => api.get(`/api/vault/items/${id}`, {
-    headers: { 'X-Vault-Password': password }
-  }),
-  create: (formData, password) => api.post('/api/vault/items', formData, {
-    headers: { 
-      'X-Vault-Password': password,
-      'Content-Type': 'multipart/form-data'
-    }
-  }),
-  update: (id, payload, password) => api.put(`/api/vault/items/${id}`, payload, {
-    headers: { 'X-Vault-Password': password }
-  }),
-  download: (id, password) => api.get(`/api/vault/items/${id}/download`, {
-    headers: { 'X-Vault-Password': password },
-    responseType: 'blob'
-  }),
-  delete: (id, password) => api.delete(`/api/vault/items/${id}`, {
-    headers: { 'X-Vault-Password': password }
-  }),
+
+  /**
+   * Creates a vault item. All encryption is performed by the caller before this is called.
+   *
+   * @param {Object} encryptedPayload
+   *   {string} label
+   *   {string} contentType
+   *   {string|null} ciphertext       - Base64 AES-256-GCM encrypted content
+   *   {string|null} iv               - Base64 GCM IV for content
+   *   {string} encryptedDEK          - Base64 DEK wrapped with user master key
+   *   {string} dekIv                 - Base64 IV used during DEK wrapping
+   *   {string} salt                  - Base64 Argon2id salt
+   *   {string} rawDEK                - Base64 raw DEK bytes (used server-side for release path wrap only)
+   *   {string|null} fileCiphertext   - Base64 AES-256-GCM encrypted file bytes (if file attached)
+   *   {string|null} fileIv           - Base64 GCM IV for file
+   *   {string|null} originalFileName - Original file name (for download)
+   *   {string[]} recipientIds        - UUIDs of assigned recipients
+   */
+  create: (encryptedPayload) => api.post('/api/vault/items', encryptedPayload),
+
+  /**
+   * Returns the encrypted blob for a single vault item (ciphertext, iv, encryptedDEK, dekIv, salt).
+   * Decryption is performed by the caller using vault.js#decryptContent.
+   */
+  get: (id) => api.get(`/api/vault/items/${id}`),
+
+  /**
+   * Updates a vault item. The caller must re-encrypt the new content before calling this.
+   * The existing DEK is re-used (no re-key needed for content updates).
+   */
+  update: (id, encryptedPayload) => api.put(`/api/vault/items/${id}`, encryptedPayload),
+
+  /**
+   * Downloads the encrypted file blob for a vault item.
+   * The caller decrypts the returned blob using vault.js#decryptFile.
+   */
+  download: (id) => api.get(`/api/vault/items/${id}/download`, { responseType: 'json' }),
+
+  /** Soft-deletes a vault item. Password verification is done client-side before calling. */
+  delete: (id) => api.delete(`/api/vault/items/${id}`),
 };
 
 // ==================== Recipients API ====================
@@ -95,4 +120,3 @@ export const recipientApi = {
 export const auditApi = {
   getLogs: (page = 0, size = 20) => api.get(`/api/audit/logs?page=${page}&size=${size}`),
 };
-

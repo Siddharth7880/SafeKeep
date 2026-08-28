@@ -1,0 +1,37 @@
+Project Name: SafeKeep
+Role: Full Stack / Backend Developer
+Project Description: A highly secure "Digital Dead Man's Switch" and legacy platform that allows users to encrypt and store sensitive information (passwords, documents, instructions). The system automatically releases these encrypted assets to designated trusted recipients if the user fails to "check in" within a configurable timeframe.
+
+--- TECH STACK ---
+Backend: Java 21, Spring Boot 3.3.2, Spring Security, Spring Data JPA, Hibernate
+Database: PostgreSQL, Flyway (for migrations)
+Security & Cryptography: BouncyCastle (Argon2id for key derivation), AES-256 (client-side zero-knowledge architecture focus), JWT (JSON Web Tokens)
+Background Processing: Quartz Scheduler (JDBC JobStore for clustered, fault-tolerant background jobs)
+Other Backend Tools: Bucket4j (Rate Limiting), Zip4j (Secure ZIP handling), Mailgun/SMTP (Thymeleaf email templates), Swagger/OpenAPI
+Frontend: React 19, Vite, TanStack Query (React Query), Zustand, React Router DOM, React Hook Form
+UI/UX: Framer Motion (Animations), custom CSS architecture (Glassmorphism, Bento-grid layouts), Lucide React (Icons)
+Networking: Axios (with robust JWT interceptors)
+
+--- RESUME BULLET POINTS (Accomplishments / Responsibilities) ---
+You can mix and match these bullet points based on the specific job you are applying for:
+
+* Engineered a Secure Digital Legacy Platform (Dead Man's Switch) using Java Spring Boot and React, enabling users to securely store and automatically transfer sensitive assets to trusted recipients upon prolonged inactivity.
+* Implemented Robust Cryptography & Security by integrating BouncyCastle for Argon2id key derivation and AES-256 encryption, ensuring zero-knowledge storage where the server cannot read vault contents.
+* Designed a Resilient Background Task System utilizing Quartz Scheduler with a JDBC JobStore in PostgreSQL, guaranteeing fault-tolerant, exact-time execution of check-in monitoring and automated legacy release workflows.
+* Developed a High-Performance, Reactive Frontend with React 19, Vite, and TanStack Query, featuring complex state management, secure file handling (Blob/ObjectURLs), and smooth micro-animations via Framer Motion.
+* Built a Scalable REST API with Spring Security JWT authentication, custom interceptors for role/vault authorization, Global Exception Handling, and Bucket4j rate limiting to mitigate brute-force attacks.
+* Created a Premium User Experience through custom CSS architectures (Bento-grid layouts, CSS variables, glassmorphism) and real-time frontend countdown timers synchronized precisely with UTC backend timestamps.
+* Resolved Complex Timezone and Authorization Bugs, ensuring global state synchronization between backend UTC timestamps and frontend client-side rendering.
+* Configured automated Database Migrations using Flyway, ensuring schema consistency across clustered environments and smooth deployment pipelines.
+
+--- KEY WORKFLOWS YOU BUILT ---
+1. The Check-in System: Users ping the server to reset a countdown timer. 
+2. The Vault: Users upload files/text encrypted with a client-side password. The server stores the ciphertext.
+3. The Scheduler: A Quartz job runs every 15 minutes to evaluate all users. If a user's timer expires + grace period elapses, the system triggers the "Release" state.
+4. The Release: The system automatically generates unique secure access links and emails them to the user's pre-configured recipients.
+
+This project demonstrates strong skills in:
+- Full Stack Architecture & System Design
+- Advanced Security & Cryptography concepts
+- Asynchronous Background Processing & Scheduling
+- Modern Frontend State Management & UI Design

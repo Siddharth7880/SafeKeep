@@ -89,17 +89,17 @@ public class ContentReleaseJob {
                             com.safekeep.backend.dto.response.VaultItemResponse decryptedResponse =
                                     vaultService.decryptVaultItemForRelease(user.getId(), item.getId());
                             if (Boolean.TRUE.equals(decryptedResponse.getHasContent())
-                                    && decryptedResponse.getContent() != null) {
+                                    && decryptedResponse.getCiphertext() != null) {
                                 net.lingala.zip4j.model.ZipParameters textParams = new net.lingala.zip4j.model.ZipParameters(zipParameters);
                                 textParams.setFileNameInZip(item.getLabel().replaceAll("[^a-zA-Z0-9.-]", "_") + ".txt");
-                                zipFile.addStream(new java.io.ByteArrayInputStream(decryptedResponse.getContent().getBytes(StandardCharsets.UTF_8)), textParams);
+                                zipFile.addStream(new java.io.ByteArrayInputStream(decryptedResponse.getCiphertext().getBytes(StandardCharsets.UTF_8)), textParams);
                             }
                             if (Boolean.TRUE.equals(decryptedResponse.getHasFile())) {
-                                com.safekeep.backend.service.impl.VaultService.DecryptedFile decFile =
+                                byte[] fileBytes =
                                         vaultService.downloadVaultItemFileForRelease(user.getId(), item.getId());
                                 net.lingala.zip4j.model.ZipParameters fileParams = new net.lingala.zip4j.model.ZipParameters(zipParameters);
-                                fileParams.setFileNameInZip(decFile.originalFileName());
-                                zipFile.addStream(new java.io.ByteArrayInputStream(decFile.bytes()), fileParams);
+                                fileParams.setFileNameInZip(item.getOriginalFileName() != null ? item.getOriginalFileName() : "attachment");
+                                zipFile.addStream(new java.io.ByteArrayInputStream(fileBytes), fileParams);
                             }
                         } catch (Exception e) {
                             log.error("Failed to decrypt and zip item {}: {}", item.getId(), e.getMessage());

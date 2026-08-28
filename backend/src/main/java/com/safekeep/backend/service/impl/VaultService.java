@@ -1,6 +1,7 @@
 package com.safekeep.backend.service.impl;
 
 import com.safekeep.backend.dto.request.CreateVaultItemRequest;
+import com.safekeep.backend.dto.request.UpdateVaultItemRequest;
 import com.safekeep.backend.dto.response.RecipientResponse;
 import com.safekeep.backend.dto.response.VaultItemResponse;
 import com.safekeep.backend.entity.Recipient;
@@ -15,19 +16,37 @@ import com.safekeep.backend.service.AuditLogService;
 import com.safekeep.backend.util.AesEncryptionUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import javax.crypto.spec.SecretKeySpec;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * Vault service — Phase 2 zero-knowledge implementation.
+ *
+ * Zero-knowledge invariant:
+ *   The server NEVER performs decryption in user-facing paths.
+ *   All user-path operations (create, get, update, delete) treat content
+ *   as opaque encrypted blobs received from or returned to the browser.
+ *
+ * The ONLY server-side decryption occurs in the release path (ContentReleaseJob),
+ * which uses the server master key — never the user's password.
+ *
+ * Key architecture:
+ *   User path:    Browser derives key → encrypts content/DEK → sends ciphertext only
+ *   Release path: Server derives key from serverSecret → decrypts server DEK copy → decrypts content
+ *
+ * rawDEK handling:
+ *   The browser sends the raw DEK (plaintext, Base64) exactly ONCE at create/update time
+ *   over HTTPS. The server wraps it with the server master key, stores the wrapped copy,
+ *   and discards the raw bytes immediately after wrapping. It is NEVER stored raw.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -38,115 +57,65 @@ public class VaultService {
     private final RecipientRepository recipientRepository;
     private final AesEncryptionUtil aesEncryptionUtil;
     private final AuditLogService auditLogService;
-    private final String uploadDir = "uploads/";
 
-    public record DecryptedFile(byte[] bytes, String originalFileName) {}
-
-    @org.springframework.beans.factory.annotation.Value("${app.release.token-secret}")
+    @Value("${app.release.token-secret}")
     private String serverSecret;
 
-    /**
-     * Derives a 256-bit master key from the user's plaintext password and a random per-item salt
-     * using Argon2id (memory-hard, 64 MB RAM cost). Supplying a wrong password will cause
-     * GCM tag verification to fail and throw an AEADBadTagException.
-     */
-    private byte[] deriveMasterKey(String userPassword, byte[] salt) {
-        try {
-            return aesEncryptionUtil.deriveKeyFromPassword(userPassword.toCharArray(), salt);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to derive master key from password", e);
-        }
-    }
+    // ==================== User-Facing Paths (Zero-Knowledge) ====================
 
     /**
-     * Derives a 256-bit server master key from the app secret using Argon2id.
-     * This key is used exclusively by the ContentReleaseJob to decrypt vault items
-     * without needing the user's password. The server secret is never sent to clients.
+     * Stores a new vault item from an already-encrypted payload.
+     *
+     * The browser has already performed:
+     *   1. Argon2id key derivation (password + salt → master key)
+     *   2. Random DEK generation
+     *   3. AES-256-GCM content/file encryption with the DEK
+     *   4. AES-256-GCM DEK wrapping with the master key
+     *
+     * This method:
+     *   1. Stores the encrypted blobs as-is (no decryption, no inspection of content)
+     *   2. Wraps the rawDEK with the server master key for the release path
+     *   3. Discards the rawDEK immediately after wrapping
      */
-    private byte[] deriveServerMasterKey(byte[] serverSalt) {
-        try {
-            return aesEncryptionUtil.deriveServerKey(serverSecret, serverSalt);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to derive server master key", e);
-        }
-    }
-
     @Transactional
-    public VaultItemResponse createVaultItem(UUID userId, String userPassword, CreateVaultItemRequest request, MultipartFile file) {
+    public VaultItemResponse createVaultItem(UUID userId, CreateVaultItemRequest request) {
         User user = getUserOrThrow(userId);
 
-        if (userPassword == null || userPassword.isBlank()) {
-            throw new IllegalArgumentException("Vault password is required");
-        }
+        validateAtLeastOnePayload(request.getCiphertext(), request.getFileCiphertext());
 
         try {
-            Files.createDirectories(Paths.get(uploadDir));
+            // Wrap rawDEK with server key for release path — discard rawDEK immediately
+            byte[] rawDekBytes = Base64.getDecoder().decode(request.getRawDEK());
+            SecretKey rawDek = new SecretKeySpec(rawDekBytes, "AES");
+            java.util.Arrays.fill(rawDekBytes, (byte) 0); // zero from JVM heap immediately
 
-            // Derive master key from user's actual password + fresh random salt
-            byte[] salt = aesEncryptionUtil.generateSalt();
-            byte[] masterKeyBytes = deriveMasterKey(userPassword, salt);
-            String saltBase64 = aesEncryptionUtil.toBase64(salt);
-
-            SecretKey dek = aesEncryptionUtil.generateDek();
-
-            String encryptedContentStr = null;
-            String contentIvStr = null;
-            if (request.getContent() != null && !request.getContent().trim().isEmpty()) {
-                byte[] contentBytes = request.getContent().getBytes(StandardCharsets.UTF_8);
-                AesEncryptionUtil.EncryptionResult contentEncrypted = aesEncryptionUtil.encrypt(contentBytes, dek);
-                encryptedContentStr = contentEncrypted.ciphertextBase64();
-                contentIvStr = contentEncrypted.ivBase64();
-            }
-
-            String originalFileName = null;
-            String encryptedFilePath = null;
-            String fileIvStr = null;
-            if (file != null && !file.isEmpty()) {
-                originalFileName = file.getOriginalFilename();
-                AesEncryptionUtil.EncryptionResult fileEncrypted = aesEncryptionUtil.encrypt(file.getBytes(), dek);
-                
-                String fileId = UUID.randomUUID().toString();
-                Path path = Paths.get(uploadDir, fileId + ".enc");
-                Files.write(path, fileEncrypted.ciphertextBase64().getBytes(StandardCharsets.UTF_8));
-                encryptedFilePath = path.toString();
-                fileIvStr = fileEncrypted.ivBase64();
-                
-                if (contentIvStr == null) {
-                    contentIvStr = fileIvStr;
-                }
-            }
-            
-            if (encryptedContentStr == null && encryptedFilePath == null) {
-                throw new IllegalArgumentException("Either content or a file must be provided.");
-            }
-
-            AesEncryptionUtil.EncryptionResult dekEncrypted = aesEncryptionUtil.encryptDek(dek, masterKeyBytes);
-
-            // Also encrypt DEK with server key (Argon2id + server secret) for the release path
             byte[] serverSalt = aesEncryptionUtil.generateSalt();
             byte[] serverMasterKeyBytes = deriveServerMasterKey(serverSalt);
-            AesEncryptionUtil.EncryptionResult dekEncryptedServer = aesEncryptionUtil.encryptDek(dek, serverMasterKeyBytes);
+            AesEncryptionUtil.EncryptionResult serverDekEncrypted =
+                    aesEncryptionUtil.encryptDek(rawDek, serverMasterKeyBytes);
+            java.util.Arrays.fill(serverMasterKeyBytes, (byte) 0);
 
-            List<Recipient> recipients = request.getRecipientIds().stream()
-                    .map(rId -> recipientRepository.findByIdAndUserId(rId, userId)
-                            .orElseThrow(() -> new ResourceNotFoundException("Recipient not found: " + rId)))
-                    .collect(Collectors.toList());
+            List<Recipient> recipients = resolveRecipients(request.getRecipientIds(), userId);
 
             VaultItem item = VaultItem.builder()
                     .user(user)
                     .label(request.getLabel())
                     .contentType(request.getContentType())
-                    .encryptedContent(encryptedContentStr)
-                    .iv(contentIvStr)
-                    .encryptedDek(dekEncrypted.ciphertextBase64())
-                    .dekIv(dekEncrypted.ivBase64())
-                    .dekSalt(saltBase64)
-                    .encryptedDekServer(dekEncryptedServer.ciphertextBase64())
-                    .dekIvServer(dekEncryptedServer.ivBase64())
+                    // Content blob (from browser, already encrypted)
+                    .encryptedContent(request.getCiphertext())
+                    .iv(request.getIv())
+                    // User DEK envelope (from browser, only user can unwrap)
+                    .encryptedDek(request.getEncryptedDEK())
+                    .dekIv(request.getDekIv())
+                    .dekSalt(request.getSalt())
+                    // Server DEK envelope (for release path)
+                    .encryptedDekServer(serverDekEncrypted.ciphertextBase64())
+                    .dekIvServer(serverDekEncrypted.ivBase64())
                     .dekSaltServer(aesEncryptionUtil.toBase64(serverSalt))
-                    .originalFileName(originalFileName)
-                    .encryptedFilePath(encryptedFilePath)
-                    .fileIv(fileIvStr)
+                    // File attachment (from browser, already encrypted, stored in DB)
+                    .originalFileName(request.getOriginalFileName())
+                    .fileCiphertext(request.getFileCiphertext())
+                    .fileIvB64(request.getFileIv())
                     .recipients(recipients)
                     .build();
 
@@ -159,11 +128,15 @@ public class VaultService {
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Failed to create vault item for user {}: {}", userId, e.getMessage());
-            throw new RuntimeException("Failed to encrypt and store vault item", e);
+            log.error("Failed to store vault item for user {}: {}", userId, e.getMessage());
+            throw new RuntimeException("Failed to store vault item", e);
         }
     }
 
+    /**
+     * Returns a list of vault items with metadata only — no encrypted blobs.
+     * Used for the vault list view where decryption is not needed.
+     */
     @Transactional(readOnly = true)
     public List<VaultItemResponse> listVaultItems(UUID userId) {
         return vaultItemRepository.findAllByUserIdAndIsActiveTrue(userId)
@@ -172,150 +145,88 @@ public class VaultService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Returns the full encrypted blob for a single vault item.
+     * The browser will use the returned ciphertext, iv, encryptedDEK, dekIv, salt
+     * to perform local AES-256-GCM decryption — the server does NOT decrypt.
+     */
     @Transactional(readOnly = true)
-    public VaultItemResponse getVaultItem(UUID userId, UUID itemId, String userPassword) {
+    public VaultItemResponse getVaultItem(UUID userId, UUID itemId) {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
-
-        if (userPassword == null || userPassword.isBlank()) {
-            throw new IllegalArgumentException("Vault password is required");
-        }
-        if (item.getDekSalt() == null) {
-            throw new RuntimeException("This vault item was created with an older encryption scheme and cannot be decrypted.");
-        }
-
-        try {
-            byte[] salt = aesEncryptionUtil.fromBase64(item.getDekSalt());
-            byte[] masterKeyBytes = deriveMasterKey(userPassword, salt);
-            SecretKey dek = aesEncryptionUtil.decryptDek(
-                    item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
-
-            VaultItemResponse response = mapToResponse(item, true);
-            if (item.getEncryptedContent() != null) {
-                byte[] contentBytes = aesEncryptionUtil.decrypt(
-                        item.getEncryptedContent(), item.getIv(), dek);
-                response.setContent(new String(contentBytes, StandardCharsets.UTF_8));
-            }
-            return response;
-        } catch (Exception e) {
-            log.error("Failed to decrypt vault item {} for user {}: {}", itemId, userId, e.getMessage());
-            throw new RuntimeException("Failed to decrypt vault item — wrong password or corrupted data", e);
-        }
+        // Return the full blob — browser handles decryption
+        return mapToResponse(item, true);
     }
 
+    /**
+     * Updates an existing vault item with a new encrypted payload from the browser.
+     * The browser re-encrypts content with the existing DEK and sends the new ciphertext.
+     * The server re-wraps the server DEK copy using the provided rawDEK.
+     */
     @Transactional
-    public VaultItemResponse updateVaultItem(UUID userId, UUID itemId, String userPassword, com.safekeep.backend.dto.request.UpdateVaultItemRequest request) {
+    public VaultItemResponse updateVaultItem(UUID userId, UUID itemId, UpdateVaultItemRequest request) {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
 
-        if (userPassword == null || userPassword.isBlank()) {
-            throw new IllegalArgumentException("Vault password is required");
-        }
-        if (item.getDekSalt() == null) {
-            throw new RuntimeException("This vault item was created with an older encryption scheme and cannot be updated.");
-        }
-
         try {
-            byte[] salt = aesEncryptionUtil.fromBase64(item.getDekSalt());
-            byte[] masterKeyBytes = deriveMasterKey(userPassword, salt);
-            SecretKey dek = aesEncryptionUtil.decryptDek(
-                    item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
+            // Re-wrap server DEK copy with new rawDEK
+            byte[] rawDekBytes = Base64.getDecoder().decode(request.getRawDEK());
+            SecretKey rawDek = new SecretKeySpec(rawDekBytes, "AES");
+            java.util.Arrays.fill(rawDekBytes, (byte) 0);
 
-            item.setLabel(request.getLabel());
-            item.setContentType(request.getContentType());
-
-            if (request.getContent() != null && !request.getContent().trim().isEmpty()) {
-                byte[] contentBytes = request.getContent().getBytes(StandardCharsets.UTF_8);
-                AesEncryptionUtil.EncryptionResult contentEncrypted = aesEncryptionUtil.encrypt(contentBytes, dek);
-                item.setEncryptedContent(contentEncrypted.ciphertextBase64());
-                item.setIv(contentEncrypted.ivBase64());
-            } else if (item.getEncryptedFilePath() == null) {
-                throw new IllegalArgumentException("Either content or a file must be provided.");
-            }
-
-            // Re-encrypt server DEK so release path stays valid after this update
             byte[] serverSalt = aesEncryptionUtil.generateSalt();
             byte[] serverMasterKeyBytes = deriveServerMasterKey(serverSalt);
-            AesEncryptionUtil.EncryptionResult dekEncryptedServer = aesEncryptionUtil.encryptDek(dek, serverMasterKeyBytes);
-            item.setEncryptedDekServer(dekEncryptedServer.ciphertextBase64());
-            item.setDekIvServer(dekEncryptedServer.ivBase64());
+            AesEncryptionUtil.EncryptionResult serverDekEncrypted =
+                    aesEncryptionUtil.encryptDek(rawDek, serverMasterKeyBytes);
+            java.util.Arrays.fill(serverMasterKeyBytes, (byte) 0);
+
+            // Update content fields if new ciphertext provided
+            item.setLabel(request.getLabel());
+            item.setContentType(request.getContentType());
+            if (request.getCiphertext() != null) {
+                item.setEncryptedContent(request.getCiphertext());
+                item.setIv(request.getIv());
+            }
+
+            // Update user DEK envelope
+            item.setEncryptedDek(request.getEncryptedDEK());
+            item.setDekIv(request.getDekIv());
+            item.setDekSalt(request.getSalt());
+
+            // Update server DEK envelope
+            item.setEncryptedDekServer(serverDekEncrypted.ciphertextBase64());
+            item.setDekIvServer(serverDekEncrypted.ivBase64());
             item.setDekSaltServer(aesEncryptionUtil.toBase64(serverSalt));
 
+            // Update recipients if provided
             if (request.getRecipientIds() != null) {
-                List<Recipient> recipients = request.getRecipientIds().stream()
-                        .map(rId -> recipientRepository.findByIdAndUserId(rId, userId)
-                                .orElseThrow(() -> new ResourceNotFoundException("Recipient not found: " + rId)))
-                        .collect(Collectors.toList());
-                item.setRecipients(recipients);
+                item.setRecipients(resolveRecipients(request.getRecipientIds(), userId));
             }
 
             vaultItemRepository.save(item);
-            auditLogService.log(userId, com.safekeep.backend.enums.AuditEventType.VAULT_ITEM_UPDATED, "USER",
+            auditLogService.log(userId, AuditEventType.VAULT_ITEM_UPDATED, "USER",
                     "Vault item updated: " + request.getLabel());
 
             return mapToResponse(item, false);
+
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
             log.error("Failed to update vault item {} for user {}: {}", itemId, userId, e.getMessage());
-            throw new RuntimeException("Failed to update vault item — wrong password or corrupted data", e);
+            throw new RuntimeException("Failed to update vault item", e);
         }
     }
 
-    @Transactional(readOnly = true)
-    public DecryptedFile downloadVaultItemFile(UUID userId, UUID itemId, String userPassword) {
-        VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
-
-        if (item.getEncryptedFilePath() == null) {
-            throw new ResourceNotFoundException("No file attached to this vault item");
-        }
-        if (userPassword == null || userPassword.isBlank()) {
-            throw new IllegalArgumentException("Vault password is required");
-        }
-        if (item.getDekSalt() == null) {
-            throw new RuntimeException("This vault item was created with an older encryption scheme and cannot be downloaded.");
-        }
-
-        try {
-            byte[] salt = aesEncryptionUtil.fromBase64(item.getDekSalt());
-            byte[] masterKeyBytes = deriveMasterKey(userPassword, salt);
-            SecretKey dek = aesEncryptionUtil.decryptDek(
-                    item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
-
-            byte[] encryptedFileBytesBase64 = Files.readAllBytes(Paths.get(item.getEncryptedFilePath()));
-            String encryptedFileBase64String = new String(encryptedFileBytesBase64, StandardCharsets.UTF_8);
-            
-            String ivToUse = item.getFileIv() != null ? item.getFileIv() : item.getIv();
-            byte[] decryptedBytes = aesEncryptionUtil.decrypt(encryptedFileBase64String, ivToUse, dek);
-
-            return new DecryptedFile(decryptedBytes, item.getOriginalFileName());
-        } catch (Exception e) {
-            log.error("Failed to decrypt file for vault item {} for user {}: {}", itemId, userId, e.getMessage());
-            throw new RuntimeException("Failed to decrypt file — wrong password or corrupted data", e);
-        }
-    }
-
+    /**
+     * Soft-deletes a vault item.
+     * JWT authentication is the authorization gate — no password needed here.
+     * The browser verifies the vault password client-side before calling this endpoint,
+     * preventing accidental deletes without sacrificing zero-knowledge.
+     */
     @Transactional
-    public void deleteVaultItem(UUID userId, UUID itemId, String userPassword) {
+    public void deleteVaultItem(UUID userId, UUID itemId) {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
-
-        if (userPassword == null || userPassword.isBlank()) {
-            throw new IllegalArgumentException("Vault password is required");
-        }
-        if (item.getDekSalt() == null) {
-            throw new RuntimeException("This vault item was created with an older encryption scheme and cannot be verified.");
-        }
-
-        // Verify password by attempting to decrypt the DEK — GCM tag failure = wrong password
-        try {
-            byte[] salt = aesEncryptionUtil.fromBase64(item.getDekSalt());
-            byte[] masterKeyBytes = deriveMasterKey(userPassword, salt);
-            aesEncryptionUtil.decryptDek(item.getEncryptedDek(), item.getDekIv(), masterKeyBytes);
-        } catch (Exception e) {
-            throw new RuntimeException("Wrong vault password — cannot delete item", e);
-        }
 
         item.setIsActive(false);
         vaultItemRepository.save(item);
@@ -323,11 +234,12 @@ public class VaultService {
                 "Vault item soft-deleted: " + item.getLabel());
     }
 
-    // ==================== RELEASE PATH (server-key only, no user password) ====================
+    // ==================== Release Path (Server Key — ContentReleaseJob only) ====================
 
     /**
-     * Decrypts a vault item's text content using the server master key (Argon2id + server secret).
+     * Decrypts a vault item's text content using the server master key.
      * Used ONLY by ContentReleaseJob. The server secret never leaves the server.
+     * This is the ONLY server-side decryption in the entire application.
      */
     @Transactional(readOnly = true)
     public VaultItemResponse decryptVaultItemForRelease(UUID userId, UUID itemId) {
@@ -335,8 +247,8 @@ public class VaultService {
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
 
         if (item.getEncryptedDekServer() == null || item.getDekSaltServer() == null) {
-            log.warn("Vault item {} has no server DEK (created before dual-DEK upgrade)", itemId);
-            return mapToResponse(item, false); // return metadata only, skip content
+            log.warn("Vault item {} has no server DEK — skipping content for release", itemId);
+            return mapToResponse(item, false);
         }
 
         try {
@@ -344,12 +256,13 @@ public class VaultService {
             byte[] serverMasterKeyBytes = deriveServerMasterKey(serverSalt);
             SecretKey dek = aesEncryptionUtil.decryptDek(
                     item.getEncryptedDekServer(), item.getDekIvServer(), serverMasterKeyBytes);
+            java.util.Arrays.fill(serverMasterKeyBytes, (byte) 0);
 
             VaultItemResponse response = mapToResponse(item, true);
             if (item.getEncryptedContent() != null) {
                 byte[] contentBytes = aesEncryptionUtil.decrypt(
                         item.getEncryptedContent(), item.getIv(), dek);
-                response.setContent(new String(contentBytes, StandardCharsets.UTF_8));
+                response.setCiphertext(new String(contentBytes, java.nio.charset.StandardCharsets.UTF_8));
             }
             return response;
         } catch (Exception e) {
@@ -363,13 +276,10 @@ public class VaultService {
      * Used ONLY by ContentReleaseJob.
      */
     @Transactional(readOnly = true)
-    public DecryptedFile downloadVaultItemFileForRelease(UUID userId, UUID itemId) {
+    public byte[] downloadVaultItemFileForRelease(UUID userId, UUID itemId) {
         VaultItem item = vaultItemRepository.findByIdAndUserIdAndIsActiveTrue(itemId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Vault item not found"));
 
-        if (item.getEncryptedFilePath() == null) {
-            throw new ResourceNotFoundException("No file attached to this vault item");
-        }
         if (item.getEncryptedDekServer() == null || item.getDekSaltServer() == null) {
             throw new RuntimeException("Vault item " + itemId + " has no server DEK — cannot release file.");
         }
@@ -379,27 +289,59 @@ public class VaultService {
             byte[] serverMasterKeyBytes = deriveServerMasterKey(serverSalt);
             SecretKey dek = aesEncryptionUtil.decryptDek(
                     item.getEncryptedDekServer(), item.getDekIvServer(), serverMasterKeyBytes);
+            java.util.Arrays.fill(serverMasterKeyBytes, (byte) 0);
 
-            byte[] encryptedFileBytesBase64 = Files.readAllBytes(Paths.get(item.getEncryptedFilePath()));
-            String encryptedFileBase64String = new String(encryptedFileBytesBase64, StandardCharsets.UTF_8);
+            // New DB-backed file
+            if (item.hasDbFile()) {
+                String ivToUse = item.getFileIvB64();
+                return aesEncryptionUtil.decrypt(item.getFileCiphertext(), ivToUse, dek);
+            }
+            // Legacy filesystem-backed file
+            if (item.hasLegacyFile()) {
+                byte[] encFileBytesBase64 = java.nio.file.Files.readAllBytes(
+                        java.nio.file.Paths.get(item.getEncryptedFilePath()));
+                String encFileBase64 = new String(encFileBytesBase64, java.nio.charset.StandardCharsets.UTF_8);
+                String ivToUse = item.getFileIv() != null ? item.getFileIv() : item.getIv();
+                return aesEncryptionUtil.decrypt(encFileBase64, ivToUse, dek);
+            }
+            throw new ResourceNotFoundException("No file data found for vault item " + itemId);
 
-            String ivToUse = item.getFileIv() != null ? item.getFileIv() : item.getIv();
-            byte[] decryptedBytes = aesEncryptionUtil.decrypt(encryptedFileBase64String, ivToUse, dek);
-
-            return new DecryptedFile(decryptedBytes, item.getOriginalFileName());
         } catch (Exception e) {
             log.error("Failed to decrypt file for vault item {} for release: {}", itemId, e.getMessage());
             throw new RuntimeException("Failed to decrypt file for release", e);
         }
     }
 
+    // ==================== Private Helpers ====================
+
+    private byte[] deriveServerMasterKey(byte[] serverSalt) {
+        try {
+            return aesEncryptionUtil.deriveServerKey(serverSecret, serverSalt);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to derive server master key", e);
+        }
+    }
 
     private User getUserOrThrow(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    private VaultItemResponse mapToResponse(VaultItem item, boolean includeContent) {
+    private List<Recipient> resolveRecipients(List<UUID> recipientIds, UUID userId) {
+        return recipientIds.stream()
+                .map(rId -> recipientRepository.findByIdAndUserId(rId, userId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Recipient not found: " + rId)))
+                .collect(Collectors.toList());
+    }
+
+    private void validateAtLeastOnePayload(String ciphertext, String fileCiphertext) {
+        if ((ciphertext == null || ciphertext.isBlank())
+                && (fileCiphertext == null || fileCiphertext.isBlank())) {
+            throw new IllegalArgumentException("Either encrypted content or an encrypted file must be provided.");
+        }
+    }
+
+    private VaultItemResponse mapToResponse(VaultItem item, boolean includeBlob) {
         List<RecipientResponse> recipientResponses = item.getRecipients().stream()
                 .map(r -> RecipientResponse.builder()
                         .id(r.getId())
@@ -411,17 +353,36 @@ public class VaultService {
                         .build())
                 .collect(Collectors.toList());
 
-        return VaultItemResponse.builder()
+        boolean hasFile = item.hasDbFile() || item.hasLegacyFile();
+
+        VaultItemResponse.VaultItemResponseBuilder builder = VaultItemResponse.builder()
                 .id(item.getId())
                 .label(item.getLabel())
                 .contentType(item.getContentType())
                 .hasContent(item.getEncryptedContent() != null)
+                .hasFile(hasFile)
                 .originalFileName(item.getOriginalFileName())
-                .hasFile(item.getEncryptedFilePath() != null)
-                .content(null)  // populated by caller when includeContent=true
                 .recipients(recipientResponses)
                 .createdAt(item.getCreatedAt())
-                .updatedAt(item.getUpdatedAt())
-                .build();
+                .updatedAt(item.getUpdatedAt());
+
+        if (includeBlob) {
+            // Return full encrypted blob — browser will decrypt locally
+            builder
+                    .ciphertext(item.getEncryptedContent())
+                    .iv(item.getIv())
+                    .encryptedDEK(item.getEncryptedDek())
+                    .dekIv(item.getDekIv())
+                    .salt(item.getDekSalt());
+
+            // Include file blob if present (DB-backed only; legacy file not supported in ZK path)
+            if (item.hasDbFile()) {
+                builder
+                        .fileCiphertext(item.getFileCiphertext())
+                        .fileIv(item.getFileIvB64());
+            }
+        }
+
+        return builder.build();
     }
 }

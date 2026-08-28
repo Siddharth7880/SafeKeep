@@ -1,4 +1,4 @@
-package com.safekeep.backend.config;
+    package com.safekeep.backend.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -12,14 +12,7 @@ import org.springframework.context.annotation.Primary;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-/**
- * Configures Jackson to serialize LocalDateTime as ISO-8601 strings with a UTC
- * offset suffix ("Z"), e.g. "2026-08-12T14:51:45Z".
- *
- * Without this, Jackson emits bare strings like "2026-08-12T14:51:45" which
- * browsers interpret as LOCAL time instead of UTC, causing the frontend timer
- * to appear offset by the user's timezone (e.g. -5h30m for IST users).
- */
+
 @Configuration
 public class JacksonConfig {
 
